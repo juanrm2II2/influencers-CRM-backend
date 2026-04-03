@@ -1,4 +1,13 @@
 import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
+import { authorize } from '../middleware/authorize';
+import {
+  validateSearch,
+  validateBulkSearch,
+  validateUpdate,
+  validateOutreach,
+  validateIdParam,
+} from '../middleware/validate';
 import {
   searchInfluencer,
   bulkSearchInfluencers,
@@ -11,25 +20,28 @@ import {
 
 const router = Router();
 
+// All routes require authentication
+router.use(authenticate);
+
 // POST /api/influencers/bulk-search  — must be before /:id routes
-router.post('/bulk-search', bulkSearchInfluencers);
+router.post('/bulk-search', validateBulkSearch, bulkSearchInfluencers);
 
 // POST /api/influencers/search
-router.post('/search', searchInfluencer);
+router.post('/search', validateSearch, searchInfluencer);
 
 // GET /api/influencers
 router.get('/', getInfluencers);
 
 // GET /api/influencers/:id
-router.get('/:id', getInfluencerById);
+router.get('/:id', validateIdParam, getInfluencerById);
 
 // PATCH /api/influencers/:id
-router.patch('/:id', updateInfluencer);
+router.patch('/:id', validateIdParam, validateUpdate, updateInfluencer);
 
-// DELETE /api/influencers/:id
-router.delete('/:id', deleteInfluencer);
+// DELETE /api/influencers/:id — restricted to admin role
+router.delete('/:id', validateIdParam, authorize('admin'), deleteInfluencer);
 
 // POST /api/influencers/:id/outreach
-router.post('/:id/outreach', createOutreach);
+router.post('/:id/outreach', validateIdParam, validateOutreach, createOutreach);
 
 export default router;
