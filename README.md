@@ -1,2 +1,2 @@
 # influencers-CRM-backend
-Influencers Dashboard (CRM Frontend)
+Influencers Dashboard (CRM Backend)
