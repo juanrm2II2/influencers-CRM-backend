@@ -14,18 +14,18 @@ const app = express();
 app.use(helmet());
 
 // ---------------------------------------------------------------------------
-// CORS — restrict to configured origins (fall back to permissive in dev)
+// CORS — restrict to configured origins (defaults to localhost in dev)
 // ---------------------------------------------------------------------------
 const ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-  : undefined; // undefined = allow all (dev only)
+  : ['http://localhost:3000'];
 
 app.use(
   cors({
-    origin: ALLOWED_ORIGINS ?? true,
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    maxAge: 86400, // preflight cache 24 h
+    maxAge: 86400, // preflight cache 24 hours
   })
 );
 
