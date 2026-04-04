@@ -169,7 +169,7 @@ describe('TokenBlocklist.isRevoked', () => {
       'Token blocklist DB lookup failed – using in-memory cache fallback'
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ token: expect.stringContaining('unknown-') }),
+      expect.objectContaining({ tokenPrefix: expect.stringContaining('unkn') }),
       'Token not found in any cache during DB outage – failing closed'
     );
   });

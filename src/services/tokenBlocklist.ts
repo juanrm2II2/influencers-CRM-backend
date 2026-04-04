@@ -35,6 +35,9 @@ const TABLE = 'revoked_tokens';
 /** Default TTL (in ms) for the known-good (non-revoked) cache – 60 seconds. */
 const KNOWN_GOOD_TTL_MS = 60_000;
 
+/** Default TTL (in ms) for revoked-token cache entries discovered via DB lookup. */
+const REVOKED_CACHE_FALLBACK_TTL_MS = 24 * 60 * 60 * 1000;
+
 class TokenBlocklist {
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -115,7 +118,7 @@ class TokenBlocklist {
         // revoked by another instance).  We don't know the exact expiry here
         // so we set a generous TTL; the periodic cleanup will evict it.
         if (!this.revokedCache.has(token)) {
-          this.revokedCache.set(token, Date.now() + 24 * 60 * 60 * 1000);
+          this.revokedCache.set(token, Date.now() + REVOKED_CACHE_FALLBACK_TTL_MS);
         }
         this.knownGoodCache.delete(token);
       } else {
@@ -147,7 +150,7 @@ class TokenBlocklist {
 
     // 3. Neither cache has a record → fail closed.
     logger.warn(
-      { token: token.slice(0, 8) + '…' },
+      { tokenPrefix: token.slice(0, 4) + '…' },
       'Token not found in any cache during DB outage – failing closed',
     );
     return true;
