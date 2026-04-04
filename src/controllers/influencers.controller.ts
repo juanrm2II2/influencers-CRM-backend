@@ -11,6 +11,13 @@ import {
   InfluencerFilters,
 } from '../types';
 
+/** Log server-side and return a generic error to the client. */
+function handleError(res: Response, err: unknown, context: string): void {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[${context}]`, message);
+  res.status(500).json({ error: 'Internal server error' });
+}
+
 // POST /api/influencers/search
 export async function searchInfluencer(
   req: Request<object, object, SearchRequestBody>,
@@ -37,14 +44,14 @@ export async function searchInfluencer(
       .single();
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error('[searchInfluencer] supabase error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.status(201).json(data);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'searchInfluencer');
   }
 }
 
@@ -68,23 +75,30 @@ export async function getInfluencers(
       query = query.eq('status', status as InfluencerStatus);
     }
     if (niche) {
-      query = query.ilike('niche', `%${niche}%`);
+      // Sanitize wildcard characters to prevent ILIKE injection
+      const sanitized = String(niche).replace(/[%_\\]/g, '\\$&');
+      query = query.ilike('niche', `%${sanitized}%`);
     }
     if (min_followers) {
-      query = query.gte('followers', Number(min_followers));
+      const num = Number(min_followers);
+      if (!Number.isFinite(num) || num < 0) {
+        res.status(400).json({ error: 'min_followers must be a non-negative number' });
+        return;
+      }
+      query = query.gte('followers', num);
     }
 
     const { data, error } = await query;
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error('[getInfluencers] supabase error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.json(data);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'getInfluencers');
   }
 }
 
@@ -114,14 +128,14 @@ export async function getInfluencerById(
       .order('contact_date', { ascending: false });
 
     if (outreachError) {
-      res.status(500).json({ error: outreachError.message });
+      console.error('[getInfluencerById] supabase error:', outreachError.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.json({ ...influencer, outreach: outreach ?? [] });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'getInfluencerById');
   }
 }
 
@@ -152,14 +166,14 @@ export async function updateInfluencer(
       .single();
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error('[updateInfluencer] supabase error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.json(data);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'updateInfluencer');
   }
 }
 
@@ -177,14 +191,14 @@ export async function deleteInfluencer(
       .eq('id', id);
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error('[deleteInfluencer] supabase error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.status(204).send();
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'deleteInfluencer');
   }
 }
 
@@ -212,14 +226,14 @@ export async function createOutreach(
       .single();
 
     if (error) {
-      res.status(500).json({ error: error.message });
+      console.error('[createOutreach] supabase error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
     res.status(201).json(data);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'createOutreach');
   }
 }
 
@@ -252,13 +266,14 @@ export async function bulkSearchInfluencers(
           .single();
 
         if (error) {
-          results.push({ handle, success: false, error: error.message });
+          console.error('[bulkSearchInfluencers] supabase error for handle:', handle, error.message);
+          results.push({ handle, success: false, error: 'Failed to save profile' });
         } else {
           results.push({ handle, success: true, data });
         }
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        results.push({ handle, success: false, error: message });
+        console.error('[bulkSearchInfluencers] error for handle:', handle, err instanceof Error ? err.message : err);
+        results.push({ handle, success: false, error: 'Failed to process handle' });
       }
     }
 
@@ -271,7 +286,6 @@ export async function bulkSearchInfluencers(
 
     res.status(201).json(summary);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    handleError(res, err, 'bulkSearchInfluencers');
   }
 }
