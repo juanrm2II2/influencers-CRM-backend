@@ -40,7 +40,7 @@ export function auditLog(
       recordAuditLog({
         actor_id: actor.sub,
         actor_email: actor.email,
-        action: `${req.method} ${req.baseUrl}${req.path}`,
+        action: `${req.method} ${req.originalUrl}`,
         resource: req.baseUrl || req.path,
         resource_id: typeof req.params.id === 'string' ? req.params.id : undefined,
         after_state:
