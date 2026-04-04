@@ -62,6 +62,14 @@ jest.mock('../../src/services/auditLog', () => ({
   recordAuditLog: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../src/services/tokenBlocklist', () => ({
+  tokenBlocklist: {
+    isRevoked: jest.fn().mockResolvedValue(false),
+    revoke: jest.fn().mockResolvedValue(undefined),
+    destroy: jest.fn(),
+  },
+}));
+
 import { createApp } from '../../src/app';
 
 const app = createApp();

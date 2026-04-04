@@ -81,6 +81,14 @@ jest.mock('../../src/services/auditLog', () => ({
   recordAuditLog: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../src/services/tokenBlocklist', () => ({
+  tokenBlocklist: {
+    isRevoked: jest.fn().mockResolvedValue(false),
+    revoke: jest.fn().mockResolvedValue(undefined),
+    destroy: jest.fn(),
+  },
+}));
+
 // Must import app AFTER mocks are set up
 import { createApp } from '../../src/app';
 import { scrapeProfile } from '../../src/services/scrapeCreators';
