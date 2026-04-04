@@ -13,6 +13,7 @@ const mockUpdate = jest.fn();
 const mockDelete = jest.fn();
 const mockUpsert = jest.fn();
 const mockFrom = jest.fn();
+const mockRange = jest.fn();
 
 // Build a chainable mock query builder
 function chainable() {
@@ -28,6 +29,7 @@ function chainable() {
     delete: mockDelete,
     upsert: mockUpsert,
     from: mockFrom,
+    range: mockRange,
   };
   for (const key of Object.keys(chain)) {
     chain[key].mockReturnValue(chain);
@@ -44,6 +46,16 @@ jest.mock('../../../src/services/supabase', () => ({
 
 jest.mock('../../../src/services/scrapeCreators', () => ({
   scrapeProfile: jest.fn(),
+}));
+
+jest.mock('../../../src/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    fatal: jest.fn(),
+  },
 }));
 
 import {
@@ -143,16 +155,10 @@ describe('searchInfluencer', () => {
 });
 
 describe('getInfluencers', () => {
-  it('should return influencers list on success', async () => {
+  it('should return influencers list with pagination on success', async () => {
     const influencers = [SAMPLE_INFLUENCER];
-    // The chain ends with the final query execution
-    // We need mockOrder to resolve the data at the end
-    mockOrder.mockReturnValue(queryChain);
-    // Override the last call in the chain to resolve data
-    // getInfluencers calls: from().select().order() then optionally .eq/.ilike/.gte
-    // The final result comes from awaiting the query
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: influencers, error: null });
+      resolve({ data: influencers, error: null, count: 1 });
     }) as unknown as jest.Mock;
 
     const req = { query: {} } as unknown as Request;
@@ -160,12 +166,15 @@ describe('getInfluencers', () => {
 
     await getInfluencers(req, res);
 
-    expect(res.json).toHaveBeenCalledWith(influencers);
+    expect(res.json).toHaveBeenCalledWith({
+      data: influencers,
+      pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+    });
   });
 
   it('should apply platform filter', async () => {
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
+      resolve({ data: [], error: null, count: 0 });
     }) as unknown as jest.Mock;
 
     const req = { query: { platform: 'tiktok' } } as unknown as Request;
@@ -178,7 +187,7 @@ describe('getInfluencers', () => {
 
   it('should apply status filter', async () => {
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
+      resolve({ data: [], error: null, count: 0 });
     }) as unknown as jest.Mock;
 
     const req = { query: { status: 'active' } } as unknown as Request;
@@ -191,7 +200,7 @@ describe('getInfluencers', () => {
 
   it('should apply niche filter with sanitized ILIKE', async () => {
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
+      resolve({ data: [], error: null, count: 0 });
     }) as unknown as jest.Mock;
 
     const req = { query: { niche: 'tech' } } as unknown as Request;
@@ -204,7 +213,7 @@ describe('getInfluencers', () => {
 
   it('should sanitize wildcard characters in niche filter', async () => {
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
+      resolve({ data: [], error: null, count: 0 });
     }) as unknown as jest.Mock;
 
     const req = { query: { niche: '100%_done' } } as unknown as Request;
@@ -236,7 +245,7 @@ describe('getInfluencers', () => {
 
   it('should apply min_followers filter', async () => {
     queryChain.then = jest.fn((resolve: (v: unknown) => void) => {
-      resolve({ data: [], error: null });
+      resolve({ data: [], error: null, count: 0 });
     }) as unknown as jest.Mock;
 
     const req = { query: { min_followers: '1000' } } as unknown as Request;

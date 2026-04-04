@@ -1,5 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
+
+jest.mock('../../../src/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    fatal: jest.fn(),
+  },
+}));
+
 import { errorHandler } from '../../../src/middleware/errorHandler';
+import { logger } from '../../../src/logger';
 
 function mockRes(): Partial<Response> {
   const res: Partial<Response> = {};
@@ -9,14 +21,8 @@ function mockRes(): Partial<Response> {
 }
 
 describe('errorHandler middleware', () => {
-  let consoleSpy: jest.SpiedFunction<typeof console.error>;
-
   beforeEach(() => {
-    consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-  });
-
-  afterEach(() => {
-    consoleSpy.mockRestore();
+    jest.clearAllMocks();
   });
 
   it('should return 500 with generic error message', () => {
@@ -39,7 +45,7 @@ describe('errorHandler middleware', () => {
 
     errorHandler(err, req, res, next);
 
-    expect(consoleSpy).toHaveBeenCalledWith('[unhandled error]', err);
+    expect(logger.error).toHaveBeenCalledWith({ err }, 'Unhandled error');
   });
 
   it('should not expose error details to the client', () => {
