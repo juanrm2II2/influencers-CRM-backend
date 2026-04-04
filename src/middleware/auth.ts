@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
+import { tokenBlocklist } from '../services/tokenBlocklist';
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 
@@ -9,6 +10,7 @@ const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
  * Expects: `Authorization: Bearer <token>`
  *
  * On success the decoded payload is attached to `req.user`.
+ * Also checks the token blocklist for revoked tokens.
  */
 export function authenticate(
   req: Request,
@@ -32,7 +34,14 @@ export function authenticate(
   try {
     const decoded = jwt.verify(token, JWT_SECRET, {
       algorithms: ['HS256'],
-    }) as JwtPayload & { sub: string; email?: string; role?: string };
+    }) as JwtPayload & { sub: string; email?: string; role?: string; jti?: string };
+
+    // Check token blocklist for revoked tokens
+    const tokenId = decoded.jti ?? token;
+    if (tokenBlocklist.isRevoked(tokenId)) {
+      res.status(401).json({ error: 'Token has been revoked' });
+      return;
+    }
 
     req.user = decoded;
     next();

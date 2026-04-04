@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { supabase } from '../services/supabase';
 import { scrapeProfile } from '../services/scrapeCreators';
+import { logger } from '../logger';
 import {
   Platform,
   InfluencerStatus,
@@ -11,10 +12,14 @@ import {
   InfluencerFilters,
 } from '../types';
 
+/** Default and maximum page sizes for pagination */
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 /** Log server-side and return a generic error to the client. */
 function handleError(res: Response, err: unknown, context: string): void {
   const message = err instanceof Error ? err.message : String(err);
-  console.error(`[${context}]`, message);
+  logger.error({ context, err: message }, `Error in ${context}`);
   res.status(500).json({ error: 'Internal server error' });
 }
 
@@ -44,7 +49,7 @@ export async function searchInfluencer(
       .single();
 
     if (error) {
-      console.error('[searchInfluencer] supabase error:', error.message);
+      logger.error({ err: error.message }, 'searchInfluencer supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
@@ -57,16 +62,23 @@ export async function searchInfluencer(
 
 // GET /api/influencers
 export async function getInfluencers(
-  req: Request<object, object, object, InfluencerFilters & { min_followers?: string }>,
+  req: Request<object, object, object, InfluencerFilters & { min_followers?: string; page?: string; limit?: string }>,
   res: Response
 ): Promise<void> {
   try {
-    const { platform, status, niche, min_followers } = req.query;
+    const { platform, status, niche, min_followers, page: pageStr, limit: limitStr } = req.query;
+
+    // Pagination
+    const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(limitStr as string, 10) || DEFAULT_PAGE_SIZE));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
     let query = supabase
       .from('influencers')
-      .select('*')
-      .order('followers', { ascending: false });
+      .select('*', { count: 'exact' })
+      .order('followers', { ascending: false })
+      .range(from, to);
 
     if (platform) {
       query = query.eq('platform', platform as Platform);
@@ -88,15 +100,23 @@ export async function getInfluencers(
       query = query.gte('followers', num);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) {
-      console.error('[getInfluencers] supabase error:', error.message);
+      logger.error({ err: error.message }, 'getInfluencers supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
 
-    res.json(data);
+    res.json({
+      data: data ?? [],
+      pagination: {
+        page,
+        limit,
+        total: count ?? 0,
+        totalPages: count ? Math.ceil(count / limit) : 0,
+      },
+    });
   } catch (err: unknown) {
     handleError(res, err, 'getInfluencers');
   }
@@ -128,7 +148,7 @@ export async function getInfluencerById(
       .order('contact_date', { ascending: false });
 
     if (outreachError) {
-      console.error('[getInfluencerById] supabase error:', outreachError.message);
+      logger.error({ err: outreachError.message }, 'getInfluencerById supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
@@ -166,7 +186,7 @@ export async function updateInfluencer(
       .single();
 
     if (error) {
-      console.error('[updateInfluencer] supabase error:', error.message);
+      logger.error({ err: error.message }, 'updateInfluencer supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
@@ -191,7 +211,7 @@ export async function deleteInfluencer(
       .eq('id', id);
 
     if (error) {
-      console.error('[deleteInfluencer] supabase error:', error.message);
+      logger.error({ err: error.message }, 'deleteInfluencer supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
@@ -226,7 +246,7 @@ export async function createOutreach(
       .single();
 
     if (error) {
-      console.error('[createOutreach] supabase error:', error.message);
+      logger.error({ err: error.message }, 'createOutreach supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
     }
@@ -266,13 +286,13 @@ export async function bulkSearchInfluencers(
           .single();
 
         if (error) {
-          console.error('[bulkSearchInfluencers] supabase error for handle:', handle, error.message);
+          logger.error({ handle, err: error.message }, 'bulkSearchInfluencers supabase error');
           results.push({ handle, success: false, error: 'Failed to save profile' });
         } else {
           results.push({ handle, success: true, data });
         }
       } catch (err: unknown) {
-        console.error('[bulkSearchInfluencers] error for handle:', handle, err instanceof Error ? err.message : err);
+        logger.error({ handle, err: err instanceof Error ? err.message : err }, 'bulkSearchInfluencers error');
         results.push({ handle, success: false, error: 'Failed to process handle' });
       }
     }

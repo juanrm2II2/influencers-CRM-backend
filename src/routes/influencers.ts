@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
+import { sanitizeBody } from '../middleware/sanitize';
+import { auditLog } from '../middleware/auditLog';
 import {
   validateSearch,
   validateBulkSearch,
@@ -22,6 +24,12 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Sanitize request bodies to prevent XSS (after auth, before handlers)
+router.use(sanitizeBody);
+
+// Audit log for state-changing operations (after auth so req.user is available)
+router.use(auditLog);
 
 // POST /api/influencers/bulk-search  — must be before /:id routes
 router.post('/bulk-search', validateBulkSearch, bulkSearchInfluencers);

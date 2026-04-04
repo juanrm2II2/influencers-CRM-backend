@@ -14,6 +14,7 @@ const mockUpdate = jest.fn();
 const mockDelete = jest.fn();
 const mockUpsert = jest.fn();
 const mockFrom = jest.fn();
+const mockRange = jest.fn();
 
 function setupChain() {
   const chain: Record<string, jest.Mock> = {
@@ -28,6 +29,7 @@ function setupChain() {
     delete: mockDelete,
     upsert: mockUpsert,
     from: mockFrom,
+    range: mockRange,
   };
   for (const key of Object.keys(chain)) {
     chain[key].mockReturnValue(chain);
@@ -46,7 +48,23 @@ jest.mock('../../src/services/scrapeCreators', () => ({
   scrapeProfile: jest.fn(),
 }));
 
-import app from '../../src/index';
+jest.mock('../../src/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    fatal: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/auditLog', () => ({
+  recordAuditLog: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { createApp } from '../../src/app';
+
+const app = createApp();
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET!;
 const userToken = generateToken({ sub: 'user-1', email: 'user@test.com', role: 'user' });

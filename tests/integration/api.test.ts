@@ -13,6 +13,7 @@ const mockUpdate = jest.fn();
 const mockDelete = jest.fn();
 const mockUpsert = jest.fn();
 const mockFrom = jest.fn();
+const mockRange = jest.fn();
 
 function setupChain() {
   mockSelect.mockReturnValue(queryChain);
@@ -26,6 +27,7 @@ function setupChain() {
   mockDelete.mockReturnValue(queryChain);
   mockUpsert.mockReturnValue(queryChain);
   mockFrom.mockReturnValue(queryChain);
+  mockRange.mockReturnValue(queryChain);
 }
 
 const queryChain: Record<string, jest.Mock> = {
@@ -40,6 +42,7 @@ const queryChain: Record<string, jest.Mock> = {
   delete: mockDelete,
   upsert: mockUpsert,
   from: mockFrom,
+  range: mockRange,
 };
 
 // Initial setup
@@ -49,7 +52,7 @@ setupChain();
  * Make the queryChain behave like a thenable that resolves with the given value.
  * This is needed for `await supabase.from(...).select(...).order(...)` to work.
  */
-function mockQueryResolve(value: { data: unknown; error: unknown }) {
+function mockQueryResolve(value: { data: unknown; error: unknown; count?: number }) {
   (queryChain as any).then = (resolve: (v: unknown) => void) => {
     resolve(value);
     return { catch: () => ({}) };
@@ -64,9 +67,25 @@ jest.mock('../../src/services/scrapeCreators', () => ({
   scrapeProfile: jest.fn(),
 }));
 
+jest.mock('../../src/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    fatal: jest.fn(),
+  },
+}));
+
+jest.mock('../../src/services/auditLog', () => ({
+  recordAuditLog: jest.fn().mockResolvedValue(undefined),
+}));
+
 // Must import app AFTER mocks are set up
-import app from '../../src/index';
+import { createApp } from '../../src/app';
 import { scrapeProfile } from '../../src/services/scrapeCreators';
+
+const app = createApp();
 
 const mockedScrapeProfile = scrapeProfile as jest.MockedFunction<typeof scrapeProfile>;
 
@@ -111,19 +130,25 @@ describe('GET /api/influencers', () => {
     expect(res.body.error).toBe('Missing or malformed Authorization header');
   });
 
-  it('should return 200 with influencers list', async () => {
-    mockQueryResolve({ data: [SAMPLE_INFLUENCER], error: null });
+  it('should return 200 with influencers list and pagination', async () => {
+    mockQueryResolve({ data: [SAMPLE_INFLUENCER], error: null, count: 1 });
 
     const res = await request(app)
       .get('/api/influencers')
       .set('Authorization', `Bearer ${userToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([SAMPLE_INFLUENCER]);
+    expect(res.body.data).toEqual([SAMPLE_INFLUENCER]);
+    expect(res.body.pagination).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      totalPages: 1,
+    });
   });
 
   it('should apply query filters', async () => {
-    mockQueryResolve({ data: [], error: null });
+    mockQueryResolve({ data: [], error: null, count: 0 });
 
     const res = await request(app)
       .get('/api/influencers?platform=tiktok&status=active&niche=tech&min_followers=1000')
