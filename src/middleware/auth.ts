@@ -10,13 +10,13 @@ const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
  * Expects: `Authorization: Bearer <token>`
  *
  * On success the decoded payload is attached to `req.user`.
- * Also checks the token blocklist for revoked tokens.
+ * Also checks the persistent token blocklist for revoked tokens.
  */
-export function authenticate(
+export async function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -36,9 +36,9 @@ export function authenticate(
       algorithms: ['HS256'],
     }) as JwtPayload & { sub: string; email?: string; role?: string; jti?: string };
 
-    // Check token blocklist for revoked tokens
+    // Check persistent token blocklist for revoked tokens
     const tokenId = decoded.jti ?? token;
-    if (tokenBlocklist.isRevoked(tokenId)) {
+    if (await tokenBlocklist.isRevoked(tokenId)) {
       res.status(401).json({ error: 'Token has been revoked' });
       return;
     }
