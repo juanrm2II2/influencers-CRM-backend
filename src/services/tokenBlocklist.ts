@@ -144,7 +144,7 @@ class TokenBlocklist {
 
     const revoked = data !== null;
 
-    // Populate the appropriate in-memory cache for future fall-back.
+    // Populate the appropriate in-memory cache for future fallback.
     if (revoked) {
       this.revokedCache.set(token, true);
       this.knownGoodCache.delete(token);
