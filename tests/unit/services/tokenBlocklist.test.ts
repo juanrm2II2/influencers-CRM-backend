@@ -40,8 +40,12 @@ afterAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  tokenBlocklist.clearCaches();
 });
 
+/* ------------------------------------------------------------------ */
+/*  revoke()                                                          */
+/* ------------------------------------------------------------------ */
 describe('TokenBlocklist.revoke', () => {
   it('should upsert the token into revoked_tokens table', async () => {
     mockUpsert.mockResolvedValue({ error: null });
@@ -63,8 +67,19 @@ describe('TokenBlocklist.revoke', () => {
     );
     expect(logger.error).toHaveBeenCalled();
   });
+
+  it('should add the token to the revoked cache after successful revoke', async () => {
+    mockUpsert.mockResolvedValue({ error: null });
+    await tokenBlocklist.revoke('cached-tok', 1700000000);
+
+    const stats = tokenBlocklist.cacheStats();
+    expect(stats.revokedSize).toBe(1);
+  });
 });
 
+/* ------------------------------------------------------------------ */
+/*  isRevoked() – normal DB path                                      */
+/* ------------------------------------------------------------------ */
 describe('TokenBlocklist.isRevoked', () => {
   it('should return true when token exists in the database', async () => {
     mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
@@ -88,18 +103,117 @@ describe('TokenBlocklist.isRevoked', () => {
     expect(result).toBe(false);
   });
 
-  it('should return false and warn on Supabase error (fail-open)', async () => {
-    const supaErr = { message: 'connection refused', code: '500' };
+  it('should populate the revoked cache on DB hit', async () => {
+    mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockSelectChain.mockReturnValue({ eq: mockEq });
+    mockMaybeSingle.mockResolvedValue({ data: { token: 'tok-r' }, error: null });
+
+    await tokenBlocklist.isRevoked('tok-r');
+
+    expect(tokenBlocklist.cacheStats().revokedSize).toBe(1);
+    expect(tokenBlocklist.cacheStats().knownGoodSize).toBe(0);
+  });
+
+  it('should populate the known-good cache on DB miss', async () => {
+    mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockSelectChain.mockReturnValue({ eq: mockEq });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+    await tokenBlocklist.isRevoked('tok-ok');
+
+    expect(tokenBlocklist.cacheStats().knownGoodSize).toBe(1);
+    expect(tokenBlocklist.cacheStats().revokedSize).toBe(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  isRevoked() – DB error fallback paths                             */
+/* ------------------------------------------------------------------ */
+describe('TokenBlocklist.isRevoked – DB error fallback', () => {
+  const supaErr = { message: 'connection refused', code: '500' };
+
+  function setupDbError() {
     mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
     mockSelectChain.mockReturnValue({ eq: mockEq });
     mockMaybeSingle.mockResolvedValue({ data: null, error: supaErr });
+  }
 
-    const result = await tokenBlocklist.isRevoked('tok-err');
+  it('should return true (fail closed) when DB fails and token is in revoked cache', async () => {
+    // Pre-populate the revoked cache via a successful revoke call
+    mockUpsert.mockResolvedValue({ error: null });
+    await tokenBlocklist.revoke('tok-revoked', 9999999999);
+
+    // Now simulate DB error
+    setupDbError();
+
+    const result = await tokenBlocklist.isRevoked('tok-revoked');
+
+    expect(result).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: supaErr }),
+      'Token blocklist lookup failed – token found in revoked cache',
+    );
+  });
+
+  it('should return false when DB fails and token is in known-good cache', async () => {
+    // Pre-populate the known-good cache via a successful isRevoked call
+    mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockSelectChain.mockReturnValue({ eq: mockEq });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    await tokenBlocklist.isRevoked('tok-good');
+
+    // Now simulate DB error
+    setupDbError();
+
+    const result = await tokenBlocklist.isRevoked('tok-good');
 
     expect(result).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: supaErr }),
-      'Token blocklist lookup failed – proceeding'
+      'Token blocklist lookup failed – token found in known-good cache, allowing',
     );
+  });
+
+  it('should return true (fail closed) when DB fails and token is NOT in any cache', async () => {
+    setupDbError();
+
+    const result = await tokenBlocklist.isRevoked('tok-unknown-err');
+
+    expect(result).toBe(true);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: supaErr }),
+      'Token blocklist lookup failed – failing closed',
+    );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  cacheStats() and clearCaches()                                    */
+/* ------------------------------------------------------------------ */
+describe('TokenBlocklist cache management', () => {
+  it('cacheStats should return correct sizes', async () => {
+    // Start empty
+    expect(tokenBlocklist.cacheStats()).toEqual({ revokedSize: 0, knownGoodSize: 0 });
+
+    // Add a revoked token
+    mockUpsert.mockResolvedValue({ error: null });
+    await tokenBlocklist.revoke('tok-a', 9999999999);
+    expect(tokenBlocklist.cacheStats().revokedSize).toBe(1);
+
+    // Add a known-good token
+    mockEq.mockReturnValue({ maybeSingle: mockMaybeSingle });
+    mockSelectChain.mockReturnValue({ eq: mockEq });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    await tokenBlocklist.isRevoked('tok-b');
+    expect(tokenBlocklist.cacheStats().knownGoodSize).toBe(1);
+  });
+
+  it('clearCaches should reset both caches', async () => {
+    mockUpsert.mockResolvedValue({ error: null });
+    await tokenBlocklist.revoke('tok-c', 9999999999);
+
+    tokenBlocklist.clearCaches();
+
+    expect(tokenBlocklist.cacheStats()).toEqual({ revokedSize: 0, knownGoodSize: 0 });
   });
 });
