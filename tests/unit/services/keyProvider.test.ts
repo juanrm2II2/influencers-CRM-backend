@@ -130,7 +130,7 @@ describe('AwsKmsKeyProvider', () => {
     'should throw when KMS_KEY_ID is missing',
     withEnv({ KMS_KEY_ID: undefined, KMS_ENCRYPTED_SECRET: 'abc' }, () => {
       expect(() => new AwsKmsKeyProvider()).toThrow(
-        'KMS_KEY_ID and KMS_ENCRYPTED_SECRET must be set',
+        'Missing required env vars for aws-kms provider: KMS_KEY_ID',
       );
     }),
   );
@@ -139,7 +139,7 @@ describe('AwsKmsKeyProvider', () => {
     'should throw when KMS_ENCRYPTED_SECRET is missing',
     withEnv({ KMS_KEY_ID: 'arn:key', KMS_ENCRYPTED_SECRET: undefined }, () => {
       expect(() => new AwsKmsKeyProvider()).toThrow(
-        'KMS_KEY_ID and KMS_ENCRYPTED_SECRET must be set',
+        'Missing required env vars for aws-kms provider: KMS_ENCRYPTED_SECRET',
       );
     }),
   );
@@ -272,7 +272,7 @@ describe('AwsSecretsManagerKeyProvider', () => {
     'should throw when AWS_SECRET_ARN is missing',
     withEnv({ AWS_SECRET_ARN: undefined }, () => {
       expect(() => new AwsSecretsManagerKeyProvider()).toThrow(
-        'AWS_SECRET_ARN must be set',
+        'Missing required env var for aws-secrets-manager provider: AWS_SECRET_ARN',
       );
     }),
   );

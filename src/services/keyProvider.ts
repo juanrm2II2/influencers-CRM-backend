@@ -112,8 +112,12 @@ export class AwsKmsKeyProvider implements JwtKeyProvider {
     const region = process.env.AWS_REGION ?? 'us-east-1';
 
     if (!keyId || !encrypted) {
+      const missing = [
+        !keyId && 'KMS_KEY_ID',
+        !encrypted && 'KMS_ENCRYPTED_SECRET',
+      ].filter(Boolean);
       throw new Error(
-        'KMS_KEY_ID and KMS_ENCRYPTED_SECRET must be set for aws-kms provider',
+        `Missing required env vars for aws-kms provider: ${missing.join(', ')}`,
       );
     }
 
@@ -126,9 +130,9 @@ export class AwsKmsKeyProvider implements JwtKeyProvider {
     await this.refresh();
 
     this.refreshTimer = setInterval(() => {
-      this.refresh().catch((err) => {
+      this.refresh().catch(() => {
         logger.error(
-          { err, provider: this.name },
+          { provider: this.name },
           'Scheduled key refresh failed – keeping cached secret',
         );
       });
@@ -214,7 +218,7 @@ export class AwsSecretsManagerKeyProvider implements JwtKeyProvider {
 
     if (!arn) {
       throw new Error(
-        'AWS_SECRET_ARN must be set for aws-secrets-manager provider',
+        'Missing required env var for aws-secrets-manager provider: AWS_SECRET_ARN',
       );
     }
 
@@ -227,9 +231,9 @@ export class AwsSecretsManagerKeyProvider implements JwtKeyProvider {
     await this.refresh();
 
     this.refreshTimer = setInterval(() => {
-      this.refresh().catch((err) => {
+      this.refresh().catch(() => {
         logger.error(
-          { err, provider: this.name },
+          { provider: this.name },
           'Scheduled secret refresh failed – keeping cached secret',
         );
       });
