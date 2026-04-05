@@ -398,6 +398,55 @@ describe('Error Information Leakage Tests', () => {
   });
 });
 
+describe('Prototype Pollution Tests', () => {
+  it('should strip __proto__ from request body', async () => {
+    const payload = JSON.parse('{"handle":"test","platform":"tiktok","__proto__":{"admin":true}}');
+    const res = await request(app)
+      .post('/api/influencers/search')
+      .set('Authorization', `Bearer ${userToken}`)
+      .set('Content-Type', 'application/json')
+      .send(payload);
+
+    // Object.prototype should not be polluted
+    expect((Object.prototype as Record<string, unknown>)['admin']).toBeUndefined();
+    // The response should not reflect __proto__ back
+    if (res.body) {
+      expect(JSON.stringify(res.body)).not.toContain('"admin":true');
+    }
+  });
+
+  it('should strip constructor key from request body', async () => {
+    const res = await request(app)
+      .post('/api/influencers/search')
+      .set('Authorization', `Bearer ${userToken}`)
+      .set('Content-Type', 'application/json')
+      .send({ handle: 'test', platform: 'tiktok', constructor: { prototype: { isAdmin: true } } });
+
+    expect((Object.prototype as Record<string, unknown>)['isAdmin']).toBeUndefined();
+  });
+
+  it('should strip prototype key from request body', async () => {
+    const res = await request(app)
+      .post('/api/influencers/search')
+      .set('Authorization', `Bearer ${userToken}`)
+      .set('Content-Type', 'application/json')
+      .send({ handle: 'test', platform: 'tiktok', prototype: { polluted: true } });
+
+    expect((Object.prototype as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('should strip nested __proto__ from request body', async () => {
+    const payload = JSON.parse('{"notes":"safe","nested":{"__proto__":{"admin":true}}}');
+    const res = await request(app)
+      .patch(`/api/influencers/${TEST_UUID}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .set('Content-Type', 'application/json')
+      .send(payload);
+
+    expect((Object.prototype as Record<string, unknown>)['admin']).toBeUndefined();
+  });
+});
+
 describe('Path Traversal Tests', () => {
   it('should return 400/404 for path traversal in :id', async () => {
     const res = await request(app)
