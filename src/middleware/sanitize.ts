@@ -12,12 +12,19 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   disallowedTagsMode: 'discard',
 };
 
+/** Keys that must be stripped to prevent prototype pollution attacks. */
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Recursively sanitizes all string values in an object.
+ * Strips keys that could lead to prototype pollution.
  */
-function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
+    if (DANGEROUS_KEYS.has(key)) {
+      continue;
+    }
     if (typeof value === 'string') {
       result[key] = sanitizeHtml(value, SANITIZE_OPTIONS);
     } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
