@@ -8,10 +8,15 @@ import axios from 'axios';
 
 // Mock axios.create to return an object with a mocked get method
 const mockGet = jest.fn();
+const mockRequestInterceptorUse = jest.fn();
 jest.mock('axios', () => ({
   ...jest.requireActual('axios'),
   create: jest.fn(() => ({
     get: mockGet,
+    interceptors: {
+      request: { use: mockRequestInterceptorUse },
+      response: { use: jest.fn() },
+    },
   })),
 }));
 
@@ -213,5 +218,42 @@ describe('scrapeProfile', () => {
 
     expect(result.last_scraped).toBeDefined();
     expect(new Date(result.last_scraped!).toISOString()).toBe(result.last_scraped);
+  });
+});
+
+describe('HTTPS-only interceptor', () => {
+  // The interceptor is registered when the module loads (before clearAllMocks
+  // in beforeEach). We capture the callback reference once here.
+  const interceptor = (() => {
+    // axios.create is called at module-load time; its return value's
+    // interceptors.request.use was invoked with the interceptor callback.
+    const createMock = axios.create as jest.Mock;
+    const clientInstance = createMock.mock.results[0]?.value;
+    return clientInstance?.interceptors?.request?.use?.mock?.calls?.[0]?.[0];
+  })();
+
+  it('should register a request interceptor on the axios client', () => {
+    expect(interceptor).toBeDefined();
+    expect(typeof interceptor).toBe('function');
+  });
+
+  it('should allow HTTPS URLs', () => {
+    const config = { url: 'https://api.scrapecreators.com/v1/tiktok/profile' };
+    expect(interceptor(config)).toBe(config);
+  });
+
+  it('should reject HTTP URLs', () => {
+    const config = { url: 'http://api.scrapecreators.com/v1/tiktok/profile' };
+    expect(() => interceptor(config)).toThrow('Only HTTPS requests are allowed');
+  });
+
+  it('should reject URLs with non-HTTPS scheme', () => {
+    const config = { url: 'ftp://example.com/file' };
+    expect(() => interceptor(config)).toThrow('Only HTTPS requests are allowed');
+  });
+
+  it('should allow when url is empty (baseURL may be used)', () => {
+    const config = { url: '' };
+    expect(interceptor(config)).toBe(config);
   });
 });

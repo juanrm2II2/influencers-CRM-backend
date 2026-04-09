@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import influencerRoutes from './routes/influencers';
 import { errorHandler } from './middleware/errorHandler';
+import { requireHttps } from './middleware/requireHttps';
 
 /**
  * Creates and configures the Express application.
@@ -11,6 +12,11 @@ import { errorHandler } from './middleware/errorHandler';
  */
 export function createApp(): express.Express {
   const app = express();
+
+  // ---------------------------------------------------------------------------
+  // TLS / HTTPS enforcement (production only)
+  // ---------------------------------------------------------------------------
+  app.use(requireHttps);
 
   // ---------------------------------------------------------------------------
   // Security headers

@@ -24,7 +24,7 @@
   "homepage": "https://github.com/juanrm2II2/influencers-CRM-backend#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
-    "axios": "^1.14.0",
+    "axios": "^1.15.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
