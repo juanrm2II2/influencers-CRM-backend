@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { logger } from './logger';
 import { validateEnv } from './validateEnv';
 import { initializeKeyProvider, destroyKeyProvider } from './services/keyProvider';
+import { tokenBlocklist } from './services/tokenBlocklist';
 
 // ---------------------------------------------------------------------------
 // Validate required environment variables at startup
@@ -64,6 +65,7 @@ process.on('uncaughtException', (err) => {
       } else {
         logger.info('HTTP server closed');
       }
+      tokenBlocklist.destroy();
       destroyKeyProvider();
       process.exit(err ? 1 : 0);
     });

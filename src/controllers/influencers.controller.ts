@@ -15,6 +15,7 @@ import {
 /** Default and maximum page sizes for pagination */
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const MAX_PAGE = 10_000;
 
 /** Log server-side and return a generic error to the client. */
 function handleError(res: Response, err: unknown, context: string): void {
@@ -68,7 +69,7 @@ export async function getInfluencers(
     const { platform, status, niche, min_followers, page: pageStr, limit: limitStr } = req.query;
 
     // Pagination
-    const page = Math.max(1, parseInt(pageStr as string, 10) || 1);
+    const page = Math.max(1, Math.min(MAX_PAGE, parseInt(pageStr as string, 10) || 1));
     const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(limitStr as string, 10) || DEFAULT_PAGE_SIZE));
     const from = (page - 1) * limit;
     const to = from + limit - 1;
@@ -185,6 +186,11 @@ export async function updateInfluencer(
       .single();
 
     if (error) {
+      // PGRST116: "JSON object requested, multiple (or no) rows returned" — not found
+      if (error.code === 'PGRST116') {
+        res.status(404).json({ error: 'Influencer not found' });
+        return;
+      }
       logger.error({ err: error.message }, 'updateInfluencer supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;
@@ -204,14 +210,20 @@ export async function deleteInfluencer(
   try {
     const { id } = req.params;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('influencers')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select();
 
     if (error) {
       logger.error({ err: error.message }, 'deleteInfluencer supabase error');
       res.status(500).json({ error: 'Internal server error' });
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      res.status(404).json({ error: 'Influencer not found' });
       return;
     }
 
@@ -245,6 +257,11 @@ export async function createOutreach(
       .single();
 
     if (error) {
+      // FK violation (23503): influencer_id references a non-existent influencer
+      if (error.code === '23503') {
+        res.status(404).json({ error: 'Influencer not found' });
+        return;
+      }
       logger.error({ err: error.message }, 'createOutreach supabase error');
       res.status(500).json({ error: 'Internal server error' });
       return;

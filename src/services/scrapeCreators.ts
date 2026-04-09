@@ -100,19 +100,20 @@ function extractProfileData(
     data.avatarThumb ??
     null;
 
-  // Build profile URL per platform
+  // Build profile URL per platform (encode handle for URL safety)
+  const encodedHandle = encodeURIComponent(handle);
   switch (platform) {
     case 'tiktok':
-      profile_url = `https://www.tiktok.com/@${handle}`;
+      profile_url = `https://www.tiktok.com/@${encodedHandle}`;
       break;
     case 'instagram':
-      profile_url = `https://www.instagram.com/${handle}`;
+      profile_url = `https://www.instagram.com/${encodedHandle}`;
       break;
     case 'youtube':
-      profile_url = `https://www.youtube.com/@${handle}`;
+      profile_url = `https://www.youtube.com/@${encodedHandle}`;
       break;
     case 'twitter':
-      profile_url = `https://twitter.com/${handle}`;
+      profile_url = `https://twitter.com/${encodedHandle}`;
       break;
   }
 
@@ -144,20 +145,22 @@ export async function scrapeProfile(
   handle: string,
   platform: Platform
 ): Promise<Omit<Influencer, 'id' | 'created_at'>> {
+  // Normalize handle to lowercase to prevent duplicate records
+  const normalizedHandle = handle.toLowerCase();
   let url: string;
 
   switch (platform) {
     case 'tiktok':
-      url = `https://api.scrapecreators.com/v1/tiktok/profile?handle=${encodeURIComponent(handle)}`;
+      url = `https://api.scrapecreators.com/v1/tiktok/profile?handle=${encodeURIComponent(normalizedHandle)}`;
       break;
     case 'instagram':
-      url = `https://api.scrapecreators.com/v1/instagram/profile?handle=${encodeURIComponent(handle)}`;
+      url = `https://api.scrapecreators.com/v1/instagram/profile?handle=${encodeURIComponent(normalizedHandle)}`;
       break;
     case 'youtube':
-      url = `https://api.scrapecreators.com/v1/youtube/channel?handle=${encodeURIComponent(handle)}`;
+      url = `https://api.scrapecreators.com/v1/youtube/channel?handle=${encodeURIComponent(normalizedHandle)}`;
       break;
     case 'twitter':
-      url = `https://api.scrapecreators.com/v1/twitter/profile?handle=${encodeURIComponent(handle)}`;
+      url = `https://api.scrapecreators.com/v1/twitter/profile?handle=${encodeURIComponent(normalizedHandle)}`;
       break;
     default:
       throw new Error(`Unsupported platform: ${platform}`);
@@ -167,5 +170,5 @@ export async function scrapeProfile(
   const profileData: ScrapeCreatorsProfile =
     response.data?.data ?? response.data;
 
-  return extractProfileData(profileData, handle, platform);
+  return extractProfileData(profileData, normalizedHandle, platform);
 }
