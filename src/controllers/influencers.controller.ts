@@ -186,7 +186,7 @@ export async function updateInfluencer(
       .single();
 
     if (error) {
-      // PGRST116: "JSON object requested, multiple (or no) rows returned" — not found
+      // PGRST116: single() found zero or multiple matching rows — treat as not found
       if (error.code === 'PGRST116') {
         res.status(404).json({ error: 'Influencer not found' });
         return;
@@ -257,7 +257,7 @@ export async function createOutreach(
       .single();
 
     if (error) {
-      // FK violation (23503): influencer_id references a non-existent influencer
+      // PostgreSQL FK violation (23503): influencer_id references a non-existent row
       if (error.code === '23503') {
         res.status(404).json({ error: 'Influencer not found' });
         return;
