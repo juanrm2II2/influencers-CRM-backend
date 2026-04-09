@@ -18,8 +18,7 @@ const MAX_PAGE_SIZE = 100;
 
 /** Log server-side and return a generic error to the client. */
 function handleError(res: Response, err: unknown, context: string): void {
-  const message = err instanceof Error ? err.message : String(err);
-  logger.error({ context, err: message }, `Error in ${context}`);
+  logger.error({ context, err }, `Error in ${context}`);
   res.status(500).json({ error: 'Internal server error' });
 }
 
