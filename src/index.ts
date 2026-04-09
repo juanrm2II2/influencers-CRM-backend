@@ -45,12 +45,27 @@ process.on('uncaughtException', (err) => {
   // -------------------------------------------------------------------------
   // Graceful shutdown on SIGTERM / SIGINT
   // -------------------------------------------------------------------------
+  const SHUTDOWN_TIMEOUT_MS = 10_000; // 10 seconds
+
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'Received shutdown signal, closing server…');
-    server.close(() => {
-      logger.info('HTTP server closed');
+
+    // Force exit if graceful shutdown takes too long
+    const forceExit = setTimeout(() => {
+      logger.error('Graceful shutdown timed out, forcing exit');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceExit.unref();
+
+    server.close((err) => {
+      clearTimeout(forceExit);
+      if (err) {
+        logger.error({ err }, 'Error while closing HTTP server');
+      } else {
+        logger.info('HTTP server closed');
+      }
       destroyKeyProvider();
-      process.exit(0);
+      process.exit(err ? 1 : 0);
     });
   };
 
