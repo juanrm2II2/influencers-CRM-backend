@@ -11,6 +11,7 @@ const scrapeClient = axios.create({
   headers: {
     'x-api-key': SCRAPECREATORS_API_KEY,
   },
+  timeout: 30_000, // 30 seconds
 });
 
 interface ScrapeCreatorsProfile {
