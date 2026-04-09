@@ -14,6 +14,19 @@ const scrapeClient = axios.create({
   timeout: 30_000, // 30 seconds
 });
 
+/**
+ * Request interceptor that blocks any outbound request whose URL does not
+ * use the HTTPS protocol, preventing accidental plaintext data exposure
+ * or SSRF downgrade attacks.
+ */
+scrapeClient.interceptors.request.use((config) => {
+  const url = config.url ?? '';
+  if (url && !url.startsWith('https://')) {
+    throw new Error('Only HTTPS requests are allowed');
+  }
+  return config;
+});
+
 interface ScrapeCreatorsProfile {
   // Common fields returned across platforms
   username?: string;
