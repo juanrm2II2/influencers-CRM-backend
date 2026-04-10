@@ -9,6 +9,8 @@ declare global {
         email?: string;
         role?: string;
       };
+      /** Unique request correlation ID, set by the requestId middleware. */
+      requestId?: string;
     }
   }
 }

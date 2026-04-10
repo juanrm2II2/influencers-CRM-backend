@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.github
+.env
+*.md
+AUDIT_REPORT.pdf
+tests
+jest.config.js
+tsconfig.test.json
+nodemon.json
+.dockerignore
+Dockerfile

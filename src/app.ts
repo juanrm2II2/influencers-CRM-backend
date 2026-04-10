@@ -3,8 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import influencerRoutes from './routes/influencers';
+import authRoutes from './routes/auth';
 import { errorHandler } from './middleware/errorHandler';
 import { requireHttps } from './middleware/requireHttps';
+import { requestId } from './middleware/requestId';
 
 /**
  * Creates and configures the Express application.
@@ -17,6 +19,11 @@ export function createApp(): express.Express {
   // TLS / HTTPS enforcement (production only)
   // ---------------------------------------------------------------------------
   app.use(requireHttps);
+
+  // ---------------------------------------------------------------------------
+  // Request-ID correlation (must be early so all downstream logs include it)
+  // ---------------------------------------------------------------------------
+  app.use(requestId);
 
   // ---------------------------------------------------------------------------
   // Security headers
@@ -67,6 +74,7 @@ export function createApp(): express.Express {
   // ---------------------------------------------------------------------------
   // Protected API routes
   // ---------------------------------------------------------------------------
+  app.use('/api/auth', authRoutes);
   app.use('/api/influencers', influencerRoutes);
 
   // ---------------------------------------------------------------------------
