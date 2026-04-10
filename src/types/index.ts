@@ -68,3 +68,43 @@ export interface InfluencerFilters {
   niche?: string;
   min_followers?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Consent management
+// ---------------------------------------------------------------------------
+export type ConsentType = 'data_processing' | 'marketing' | 'analytics' | 'third_party_sharing';
+
+export interface Consent {
+  id: string;
+  user_id: string;
+  consent_type: ConsentType;
+  granted: boolean;
+  ip_address: string | null;
+  granted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsentRequestBody {
+  consent_type: ConsentType;
+  granted: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// DSAR (Data Subject Access Requests)
+// ---------------------------------------------------------------------------
+export type DsarRequestType = 'access' | 'erasure' | 'export';
+export type DsarStatus = 'pending' | 'processing' | 'completed' | 'rejected';
+
+export interface DsarRequest {
+  id: string;
+  user_id: string;
+  user_email: string | null;
+  request_type: DsarRequestType;
+  status: DsarStatus;
+  notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
