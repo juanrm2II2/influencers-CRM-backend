@@ -55,77 +55,55 @@ async function fetchBeforeState(
  * - IP address
  *
  * Must be placed after the authenticate middleware so that req.user is available.
+ *
+ * Note: This middleware is async because it fetches before-state from the DB.
+ * Express 5 natively supports async middleware and will forward rejections
+ * to the error handler.
  */
-export function auditLog(
+export async function auditLog(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   if (!AUDITABLE_METHODS.has(req.method)) {
     next();
     return;
   }
 
-  // Capture before-state asynchronously, then intercept the response
-  fetchBeforeState(req)
-    .then((beforeState) => {
-      // Capture the original res.json to intercept response body
-      const originalJson = res.json.bind(res);
+  // Fetch before-state; on failure, continue without it
+  let beforeState: Record<string, unknown> | undefined;
+  try {
+    beforeState = await fetchBeforeState(req);
+  } catch (err) {
+    logger.warn({ err }, 'Failed to capture before-state for audit log');
+  }
 
-      res.json = function (body: unknown) {
-        // Fire-and-forget audit log recording
-        const actor = req.user;
-        if (actor) {
-          recordAuditLog({
-            actor_id: actor.sub,
-            actor_email: actor.email,
-            action: `${req.method} ${req.originalUrl}`,
-            resource: req.baseUrl || req.path,
-            resource_id: typeof req.params.id === 'string' ? req.params.id : undefined,
-            before_state: beforeState,
-            after_state:
-              req.method === 'DELETE'
-                ? undefined
-                : (req.body as Record<string, unknown>),
-            ip_address: req.ip,
-          }).catch((err) => {
-            logger.error({ err }, 'Audit log recording failed');
-          });
-        }
+  // Capture the original res.json to intercept response body
+  const originalJson = res.json.bind(res);
 
-        return originalJson(body);
-      };
+  res.json = function (body: unknown) {
+    // Fire-and-forget audit log recording
+    const actor = req.user;
+    if (actor) {
+      recordAuditLog({
+        actor_id: actor.sub,
+        actor_email: actor.email,
+        action: `${req.method} ${req.originalUrl}`,
+        resource: req.baseUrl || req.path,
+        resource_id: typeof req.params.id === 'string' ? req.params.id : undefined,
+        before_state: beforeState,
+        after_state:
+          req.method === 'DELETE'
+            ? undefined
+            : (req.body as Record<string, unknown>),
+        ip_address: req.ip,
+      }).catch((auditErr) => {
+        logger.error({ err: auditErr }, 'Audit log recording failed');
+      });
+    }
 
-      next();
-    })
-    .catch((err) => {
-      // If before-state capture fails, continue without it
-      logger.warn({ err }, 'Failed to capture before-state for audit log');
+    return originalJson(body);
+  };
 
-      const originalJson = res.json.bind(res);
-
-      res.json = function (body: unknown) {
-        const actor = req.user;
-        if (actor) {
-          recordAuditLog({
-            actor_id: actor.sub,
-            actor_email: actor.email,
-            action: `${req.method} ${req.originalUrl}`,
-            resource: req.baseUrl || req.path,
-            resource_id: typeof req.params.id === 'string' ? req.params.id : undefined,
-            after_state:
-              req.method === 'DELETE'
-                ? undefined
-                : (req.body as Record<string, unknown>),
-            ip_address: req.ip,
-          }).catch((auditErr) => {
-            logger.error({ err: auditErr }, 'Audit log recording failed');
-          });
-        }
-
-        return originalJson(body);
-      };
-
-      next();
-    });
+  next();
 }
