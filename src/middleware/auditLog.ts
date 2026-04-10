@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { recordAuditLog } from '../services/auditLog';
 import { supabase } from '../services/supabase';
 import { logger } from '../logger';
+import { anonymizeIp } from '../services/privacy';
 
 /**
  * Set of HTTP methods considered state-changing and worth auditing.
@@ -96,7 +97,7 @@ export async function auditLog(
           req.method === 'DELETE'
             ? undefined
             : (req.body as Record<string, unknown>),
-        ip_address: req.ip,
+        ip_address: anonymizeIp(req.ip) ?? undefined,
       }).catch((auditErr) => {
         logger.error({ err: auditErr }, 'Audit log recording failed');
       });

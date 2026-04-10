@@ -133,3 +133,65 @@ export function validateIdParam(req: Request, res: Response, next: NextFunction)
 
   next();
 }
+
+// ---------------------------------------------------------------------------
+// Privacy / GDPR validators
+// ---------------------------------------------------------------------------
+
+const VALID_CONSENT_TYPES = ['data_processing', 'marketing', 'analytics', 'third_party_sharing'] as const;
+const VALID_DSAR_TYPES = ['access', 'erasure', 'export'] as const;
+const VALID_DSAR_STATUSES = ['pending', 'processing', 'completed', 'rejected'] as const;
+
+/** POST /api/privacy/consent */
+export function validateConsent(req: Request, res: Response, next: NextFunction): void {
+  const { consent_type, granted } = req.body ?? {};
+
+  if (!consent_type || !VALID_CONSENT_TYPES.includes(consent_type)) {
+    res.status(400).json({
+      error: `consent_type must be one of: ${VALID_CONSENT_TYPES.join(', ')}`,
+    });
+    return;
+  }
+
+  if (typeof granted !== 'boolean') {
+    res.status(400).json({ error: 'granted must be a boolean' });
+    return;
+  }
+
+  next();
+}
+
+/** POST /api/privacy/requests */
+export function validateDsarRequest(req: Request, res: Response, next: NextFunction): void {
+  const { request_type } = req.body ?? {};
+
+  if (!request_type || !VALID_DSAR_TYPES.includes(request_type)) {
+    res.status(400).json({
+      error: `request_type must be one of: ${VALID_DSAR_TYPES.join(', ')}`,
+    });
+    return;
+  }
+
+  next();
+}
+
+/** PATCH /api/privacy/requests/:id */
+export function validateDsarUpdate(req: Request, res: Response, next: NextFunction): void {
+  const { status, notes } = req.body ?? {};
+
+  if (!status || !VALID_DSAR_STATUSES.includes(status)) {
+    res.status(400).json({
+      error: `status must be one of: ${VALID_DSAR_STATUSES.join(', ')}`,
+    });
+    return;
+  }
+
+  if (notes !== undefined && (typeof notes !== 'string' || notes.length > MAX_TEXT_LENGTH)) {
+    res.status(400).json({
+      error: `notes must be a string of at most ${MAX_TEXT_LENGTH} characters`,
+    });
+    return;
+  }
+
+  next();
+}
