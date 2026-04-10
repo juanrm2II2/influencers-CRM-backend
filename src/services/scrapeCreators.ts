@@ -1,5 +1,7 @@
 import axios from 'axios';
+import { z } from 'zod/v4';
 import { Platform, Influencer } from '../types';
+import { logger } from '../logger';
 
 const SCRAPECREATORS_API_KEY = process.env.SCRAPECREATORS_API_KEY;
 
@@ -27,37 +29,51 @@ scrapeClient.interceptors.request.use((config) => {
   return config;
 });
 
-interface ScrapeCreatorsProfile {
-  // Common fields returned across platforms
-  username?: string;
-  nickname?: string;
-  uniqueId?: string;
-  name?: string;
-  full_name?: string;
-  biography?: string;
-  bio?: string;
-  signature?: string;
-  followerCount?: number;
-  followers?: number;
-  followersCount?: number;
-  followingCount?: number;
-  following?: number;
-  friendCount?: number;
-  heartCount?: number;
-  diggCount?: number;
-  videoCount?: number;
-  avgViews?: number;
-  avg_views?: number;
-  avgLikes?: number;
-  avg_likes?: number;
-  mediaCount?: number;
-  avatarThumb?: string;
-  avatarLarger?: string;
-  profilePicUrl?: string;
-  profile_pic_url?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
+/**
+ * Zod schema for the ScrapeCreators API response profile object.
+ * Validates the shape of the response and coerces/strips unexpected fields.
+ */
+const ScrapeCreatorsProfileSchema = z.object({
+  username: z.optional(z.string()),
+  nickname: z.optional(z.string()),
+  uniqueId: z.optional(z.string()),
+  name: z.optional(z.string()),
+  full_name: z.optional(z.string()),
+  biography: z.optional(z.string()),
+  bio: z.optional(z.string()),
+  signature: z.optional(z.string()),
+  followerCount: z.optional(z.number()),
+  followers: z.optional(z.number()),
+  followersCount: z.optional(z.number()),
+  followingCount: z.optional(z.number()),
+  following: z.optional(z.number()),
+  friendCount: z.optional(z.number()),
+  heartCount: z.optional(z.number()),
+  diggCount: z.optional(z.number()),
+  videoCount: z.optional(z.number()),
+  avgViews: z.optional(z.number()),
+  avg_views: z.optional(z.number()),
+  avgLikes: z.optional(z.number()),
+  avg_likes: z.optional(z.number()),
+  mediaCount: z.optional(z.number()),
+  avatarThumb: z.optional(z.string()),
+  avatarLarger: z.optional(z.string()),
+  profilePicUrl: z.optional(z.string()),
+  profile_pic_url: z.optional(z.string()),
+}).passthrough();
+
+/**
+ * Zod schema for the top-level ScrapeCreators API response.
+ * Accepts either `{ data: ProfileObject }` or a flat profile object.
+ */
+const ScrapeCreatorsResponseSchema = z.union([
+  z.object({ data: ScrapeCreatorsProfileSchema }).passthrough(),
+  ScrapeCreatorsProfileSchema,
+]);
+
+type ScrapeCreatorsProfile = z.infer<typeof ScrapeCreatorsProfileSchema>;
+
+export { ScrapeCreatorsProfileSchema, ScrapeCreatorsResponseSchema };
 
 function extractProfileData(
   data: ScrapeCreatorsProfile,
@@ -176,9 +192,23 @@ export async function scrapeProfile(
       throw new Error(`Unsupported platform: ${platform}`);
   }
 
-  const response = await scrapeClient.get<ScrapeCreatorsProfile>(url);
+  const response = await scrapeClient.get(url);
+
+  // Validate the API response against the schema
+  const parseResult = ScrapeCreatorsResponseSchema.safeParse(response.data);
+  if (!parseResult.success) {
+    logger.error(
+      { err: parseResult.error, platform, handle },
+      'ScrapeCreators API returned an invalid response',
+    );
+    throw new Error('ScrapeCreators API returned an invalid response');
+  }
+
+  const validated = parseResult.data;
   const profileData: ScrapeCreatorsProfile =
-    response.data?.data ?? response.data;
+    'data' in validated && validated.data && typeof validated.data === 'object'
+      ? (validated.data as ScrapeCreatorsProfile)
+      : (validated as ScrapeCreatorsProfile);
 
   return extractProfileData(profileData, handle, platform);
 }

@@ -72,7 +72,6 @@ jobs:
 
       - name: Run npm audit
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Check for outdated dependencies
         run: npm outdated || true

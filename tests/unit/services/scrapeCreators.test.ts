@@ -22,6 +22,16 @@ jest.mock('axios', () => ({
 
 import { scrapeProfile } from '../../../src/services/scrapeCreators';
 
+jest.mock('../../../src/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    fatal: jest.fn(),
+  },
+}));
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -255,5 +265,53 @@ describe('HTTPS-only interceptor', () => {
   it('should allow when url is empty (baseURL may be used)', () => {
     const config = { url: '' };
     expect(interceptor(config)).toBe(config);
+  });
+});
+
+describe('Zod response schema validation', () => {
+  it('should reject a response that is not an object (e.g. a string)', async () => {
+    mockGet.mockResolvedValue({
+      data: 'not-an-object',
+    });
+
+    await expect(
+      scrapeProfile('user', 'tiktok')
+    ).rejects.toThrow('ScrapeCreators API returned an invalid response');
+  });
+
+  it('should reject a response that is null', async () => {
+    mockGet.mockResolvedValue({
+      data: null,
+    });
+
+    await expect(
+      scrapeProfile('user', 'tiktok')
+    ).rejects.toThrow('ScrapeCreators API returned an invalid response');
+  });
+
+  it('should reject a response that is an array', async () => {
+    mockGet.mockResolvedValue({
+      data: [{ followers: 100 }],
+    });
+
+    await expect(
+      scrapeProfile('user', 'tiktok')
+    ).rejects.toThrow('ScrapeCreators API returned an invalid response');
+  });
+
+  it('should accept a valid response with extra unknown fields', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        data: {
+          nickname: 'Test',
+          followers: 1000,
+          someUnknownField: 'value',
+        },
+      },
+    });
+
+    const result = await scrapeProfile('user', 'tiktok');
+    expect(result.full_name).toBe('Test');
+    expect(result.followers).toBe(1000);
   });
 });
