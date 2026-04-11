@@ -329,6 +329,18 @@ describe('PATCH /api/influencers/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
   });
+
+  it('should return 404 when influencer does not exist', async () => {
+    mockSingle.mockResolvedValue({ data: null, error: { message: 'JSON object requested, multiple (or no) rows returned', code: 'PGRST116' } });
+
+    const res = await request(app)
+      .patch(`/api/influencers/${TEST_UUID}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ status: 'active' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Influencer not found');
+  });
 });
 
 describe('DELETE /api/influencers/:id', () => {
@@ -342,13 +354,24 @@ describe('DELETE /api/influencers/:id', () => {
   });
 
   it('should return 204 for admin user', async () => {
-    mockEq.mockResolvedValue({ error: null });
+    mockSelect.mockResolvedValue({ data: [{ id: TEST_UUID }], error: null });
 
     const res = await request(app)
       .delete(`/api/influencers/${TEST_UUID}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(204);
+  });
+
+  it('should return 404 when influencer does not exist', async () => {
+    mockSelect.mockResolvedValue({ data: [], error: null });
+
+    const res = await request(app)
+      .delete(`/api/influencers/${TEST_UUID}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Influencer not found');
   });
 
   it('should return 400 for invalid UUID', async () => {
@@ -393,6 +416,18 @@ describe('POST /api/influencers/:id/outreach', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual(SAMPLE_OUTREACH);
+  });
+
+  it('should return 404 when influencer does not exist (FK violation)', async () => {
+    mockSingle.mockResolvedValue({ data: null, error: { message: 'insert or update on table "outreach" violates foreign key constraint', code: '23503' } });
+
+    const res = await request(app)
+      .post(`/api/influencers/${TEST_UUID}/outreach`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ channel: 'email' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Influencer not found');
   });
 });
 

@@ -323,6 +323,18 @@ describe('updateInfluencer', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'No valid fields to update' });
   });
 
+  it('should return 404 when influencer does not exist', async () => {
+    mockSingle.mockResolvedValue({ data: null, error: { message: 'JSON object requested, multiple (or no) rows returned', code: 'PGRST116' } });
+
+    const req = { params: { id: TEST_UUID }, body: { niche: 'tech' } } as any;
+    const res = mockRes() as Response;
+
+    await updateInfluencer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
+  });
+
   it('should return 500 on supabase error', async () => {
     mockSingle.mockResolvedValue({ data: null, error: { message: 'DB error' } });
 
@@ -337,7 +349,7 @@ describe('updateInfluencer', () => {
 
 describe('deleteInfluencer', () => {
   it('should return 204 on successful deletion', async () => {
-    mockEq.mockResolvedValue({ error: null });
+    mockSelect.mockResolvedValue({ data: [SAMPLE_INFLUENCER], error: null });
 
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
@@ -348,8 +360,20 @@ describe('deleteInfluencer', () => {
     expect(res.send).toHaveBeenCalled();
   });
 
+  it('should return 404 when influencer does not exist', async () => {
+    mockSelect.mockResolvedValue({ data: [], error: null });
+
+    const req = { params: { id: TEST_UUID } } as any;
+    const res = mockRes() as Response;
+
+    await deleteInfluencer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
+  });
+
   it('should return 500 on supabase error', async () => {
-    mockEq.mockResolvedValue({ error: { message: 'DB error' } });
+    mockSelect.mockResolvedValue({ data: null, error: { message: 'DB error' } });
 
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
@@ -388,6 +412,21 @@ describe('createOutreach', () => {
     await createOutreach(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('should return 404 when influencer does not exist (FK violation)', async () => {
+    mockSingle.mockResolvedValue({ data: null, error: { message: 'insert or update on table "outreach" violates foreign key constraint', code: '23503' } });
+
+    const req = {
+      params: { id: TEST_UUID },
+      body: { channel: 'email' },
+    } as any;
+    const res = mockRes() as Response;
+
+    await createOutreach(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
   });
 });
 
