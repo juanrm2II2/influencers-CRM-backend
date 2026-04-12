@@ -97,6 +97,31 @@ export interface ConsentRequestBody {
 export type DsarRequestType = 'access' | 'erasure' | 'export';
 export type DsarStatus = 'pending' | 'processing' | 'completed' | 'rejected';
 
+// ---------------------------------------------------------------------------
+// KYC (Know Your Customer)
+// ---------------------------------------------------------------------------
+export type KycStatus = 'pending' | 'verified' | 'rejected';
+
+export interface KycVerification {
+  id: string;
+  user_id: string;
+  kyc_status: KycStatus;
+  provider: string;
+  applicant_id: string | null;
+  review_answer: string | null;
+  rejection_reason: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KycVerifyRequestBody {
+  /** ISO 3166-1 alpha-3 country code (e.g. "USA", "GBR") */
+  country: string;
+  /** Document type to verify (e.g. "PASSPORT", "ID_CARD", "DRIVERS") */
+  id_doc_type: string;
+}
+
 export interface DsarRequest {
   id: string;
   user_id: string;
