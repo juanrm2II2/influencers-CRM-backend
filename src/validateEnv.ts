@@ -52,4 +52,9 @@ export function validateEnv(): void {
   }
 
   logger.info({ keyProvider: provider }, 'All required environment variables are present');
+
+  // Optional: warn about field-level encryption configuration
+  if (process.env.FIELD_ENCRYPTION_KMS_KEY_ID) {
+    logger.info('Column-level PII field encryption is configured');
+  }
 }
