@@ -87,6 +87,7 @@ const ALGORITHM = 'aes-256-gcm' as const;
 const IV_LENGTH = 12; // 96-bit IV recommended for GCM
 const TAG_LENGTH = 16; // 128-bit auth tag
 
+/** Encrypt plaintext using AES-256-GCM.  Exported for unit testing. */
 function aesEncrypt(
   plaintext: string,
   key: Buffer,
@@ -103,6 +104,11 @@ function aesEncrypt(
   return { iv, tag, ciphertext: encrypted };
 }
 
+/**
+ * Decrypt ciphertext using AES-256-GCM.  Throws on authentication
+ * failure (tampered ciphertext / tag / wrong key).  Exported for
+ * unit testing.
+ */
 function aesDecrypt(
   ciphertext: Buffer,
   key: Buffer,
@@ -174,7 +180,7 @@ export class FieldEncryptionService {
   }
 
   /**
-   * Encrypt specific fields of a record in-place.
+   * Encrypt specific fields of a record, returning a new object.
    *
    * Only non-null string values are encrypted.  Numeric or null fields
    * are left untouched.
@@ -227,7 +233,7 @@ export class FieldEncryptionService {
   }
 
   /**
-   * Decrypt specific fields of a record in-place.
+   * Decrypt specific fields of a record, returning a new object.
    *
    * Only non-null string values that look like encrypted envelopes
    * are decrypted.
