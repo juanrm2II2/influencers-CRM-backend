@@ -5,7 +5,6 @@ import rateLimit from 'express-rate-limit';
 import influencerRoutes from './routes/influencers';
 import authRoutes from './routes/auth';
 import privacyRoutes from './routes/privacy';
-import kycRoutes from './routes/kyc';
 import { errorHandler } from './middleware/errorHandler';
 import { requireHttps } from './middleware/requireHttps';
 import { requestId } from './middleware/requestId';
@@ -79,7 +78,6 @@ export function createApp(): express.Express {
   app.use('/api/auth', authRoutes);
   app.use('/api/influencers', influencerRoutes);
   app.use('/api/privacy', privacyRoutes);
-  app.use('/api/kyc', kycRoutes);
 
   // ---------------------------------------------------------------------------
   // Centralized error handler (must be registered last)
