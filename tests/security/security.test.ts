@@ -70,6 +70,10 @@ jest.mock('../../src/services/tokenBlocklist', () => ({
   },
 }));
 
+jest.mock('../../src/middleware/requireConsent', () => ({
+  requireConsent: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 import { createApp } from '../../src/app';
 
 const app = createApp();
