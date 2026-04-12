@@ -11,6 +11,8 @@ import {
   OutreachRequestBody,
   InfluencerFilters,
 } from '../types';
+import { getFieldEncryptionService } from '../services/fieldEncryption';
+import { INFLUENCER_PII_FIELDS } from '../services/piiFields';
 
 /** Default and maximum page sizes for pagination */
 const DEFAULT_PAGE_SIZE = 20;
@@ -38,11 +40,18 @@ export async function searchInfluencer(
 
     const profileData = await scrapeProfile(handle, platform);
 
+    // Encrypt PII fields before persisting
+    const enc = getFieldEncryptionService();
+    const encryptedProfile = await enc.encryptFields(
+      { ...profileData },
+      INFLUENCER_PII_FIELDS,
+    );
+
     // Upsert by handle + platform to avoid duplicates across platforms
     const { data, error } = await supabase
       .from('influencers')
       .upsert(
-        { ...profileData },
+        encryptedProfile,
         { onConflict: 'handle,platform', ignoreDuplicates: false }
       )
       .select()
@@ -54,7 +63,9 @@ export async function searchInfluencer(
       return;
     }
 
-    res.status(201).json(data);
+    // Decrypt PII fields before returning to client
+    const decrypted = await enc.decryptFields(data, INFLUENCER_PII_FIELDS);
+    res.status(201).json(decrypted);
   } catch (err: unknown) {
     handleError(res, err, 'searchInfluencer');
   }
@@ -108,8 +119,14 @@ export async function getInfluencers(
       return;
     }
 
+    // Decrypt PII fields before returning to client
+    const enc = getFieldEncryptionService();
+    const decryptedData = await Promise.all(
+      (data ?? []).map((row) => enc.decryptFields(row, INFLUENCER_PII_FIELDS)),
+    );
+
     res.json({
-      data: data ?? [],
+      data: decryptedData,
       pagination: {
         page,
         limit,
@@ -153,7 +170,10 @@ export async function getInfluencerById(
       return;
     }
 
-    res.json({ ...influencer, outreach: outreach ?? [] });
+    // Decrypt PII fields before returning to client
+    const enc = getFieldEncryptionService();
+    const decrypted = await enc.decryptFields(influencer, INFLUENCER_PII_FIELDS);
+    res.json({ ...decrypted, outreach: outreach ?? [] });
   } catch (err: unknown) {
     handleError(res, err, 'getInfluencerById');
   }
@@ -196,7 +216,10 @@ export async function updateInfluencer(
       return;
     }
 
-    res.json(data);
+    // Decrypt PII fields before returning to client
+    const enc = getFieldEncryptionService();
+    const decrypted = await enc.decryptFields(data, INFLUENCER_PII_FIELDS);
+    res.json(decrypted);
   } catch (err: unknown) {
     handleError(res, err, 'updateInfluencer');
   }
@@ -288,14 +311,22 @@ export async function bulkSearchInfluencers(
 
     const results: { handle: string; success: boolean; data?: unknown; error?: string }[] = [];
 
+    const enc = getFieldEncryptionService();
+
     for (const handle of handles) {
       try {
         const profileData = await scrapeProfile(handle, platform);
 
+        // Encrypt PII fields before persisting
+        const encryptedProfile = await enc.encryptFields(
+          { ...profileData },
+          INFLUENCER_PII_FIELDS,
+        );
+
         const { data, error } = await supabase
           .from('influencers')
           .upsert(
-            { ...profileData },
+            encryptedProfile,
             { onConflict: 'handle,platform', ignoreDuplicates: false }
           )
           .select()
@@ -305,7 +336,9 @@ export async function bulkSearchInfluencers(
           logger.error({ handle, err: error.message }, 'bulkSearchInfluencers supabase error');
           results.push({ handle, success: false, error: 'Failed to save profile' });
         } else {
-          results.push({ handle, success: true, data });
+          // Decrypt PII fields before returning to client
+          const decrypted = await enc.decryptFields(data, INFLUENCER_PII_FIELDS);
+          results.push({ handle, success: true, data: decrypted });
         }
       } catch (err: unknown) {
         logger.error({ handle, err: err instanceof Error ? err.message : err }, 'bulkSearchInfluencers error');
