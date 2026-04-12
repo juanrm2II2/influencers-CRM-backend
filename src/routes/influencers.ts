@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { authorize } from '../middleware/authorize';
+import { requireConsent } from '../middleware/requireConsent';
 import { sanitizeBody } from '../middleware/sanitize';
 import { auditLog } from '../middleware/auditLog';
 import {
@@ -24,6 +25,9 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Verify data-processing consent before any data processing
+router.use(requireConsent);
 
 // Sanitize request bodies to prevent XSS (after auth, before handlers)
 router.use(sanitizeBody);

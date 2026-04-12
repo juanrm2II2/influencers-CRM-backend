@@ -89,6 +89,10 @@ jest.mock('../../src/services/tokenBlocklist', () => ({
   },
 }));
 
+jest.mock('../../src/middleware/requireConsent', () => ({
+  requireConsent: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 // Must import app AFTER mocks are set up
 import { createApp } from '../../src/app';
 import { scrapeProfile } from '../../src/services/scrapeCreators';
