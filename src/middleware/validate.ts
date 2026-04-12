@@ -175,6 +175,49 @@ export function validateDsarRequest(req: Request, res: Response, next: NextFunct
   next();
 }
 
+// ---------------------------------------------------------------------------
+// KYC validators
+// ---------------------------------------------------------------------------
+
+const VALID_ID_DOC_TYPES = ['PASSPORT', 'ID_CARD', 'DRIVERS', 'RESIDENCE_PERMIT'] as const;
+const COUNTRY_CODE_RE = /^[A-Z]{3}$/;
+
+/** POST /api/kyc/verify */
+export function validateKycVerify(req: Request, res: Response, next: NextFunction): void {
+  const { country, id_doc_type } = req.body ?? {};
+
+  if (!isNonEmptyString(country) || !COUNTRY_CODE_RE.test(country)) {
+    res
+      .status(400)
+      .json({ error: 'country must be a valid ISO 3166-1 alpha-3 code (e.g. "USA")' });
+    return;
+  }
+
+  if (
+    !isNonEmptyString(id_doc_type) ||
+    !VALID_ID_DOC_TYPES.includes(id_doc_type as typeof VALID_ID_DOC_TYPES[number])
+  ) {
+    res.status(400).json({
+      error: `id_doc_type must be one of: ${VALID_ID_DOC_TYPES.join(', ')}`,
+    });
+    return;
+  }
+
+  next();
+}
+
+/** GET /api/kyc/status/:userId — validates the userId path param */
+export function validateUserIdParam(req: Request, res: Response, next: NextFunction): void {
+  const userId = req.params.userId as string | undefined;
+
+  if (!userId || !isNonEmptyString(userId) || userId.length > 255) {
+    res.status(400).json({ error: 'userId parameter is required' });
+    return;
+  }
+
+  next();
+}
+
 /** PATCH /api/privacy/requests/:id */
 export function validateDsarUpdate(req: Request, res: Response, next: NextFunction): void {
   const { status, notes } = req.body ?? {};
