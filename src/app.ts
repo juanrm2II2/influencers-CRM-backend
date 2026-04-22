@@ -5,7 +5,7 @@ import pinoHttp from 'pino-http';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { errorHandler, notFoundHandler } from './middleware/error-handler';
-import { globalRateLimiter } from './middleware/rate-limit';
+import { globalRateLimiter, webhookRateLimiter } from './middleware/rate-limit';
 import { requestId } from './middleware/request-id';
 import { auditRouter } from './modules/audit/audit.routes';
 import { authRouter } from './modules/auth/auth.routes';
@@ -37,7 +37,9 @@ export function buildApp(): Express {
   app.use(requestId());
   app.use(
     helmet({
-      contentSecurityPolicy: e.NODE_ENV === 'production' ? undefined : false,
+      // Defaults are appropriate for a JSON API (we do not serve HTML).
+      // `crossOriginEmbedderPolicy` is disabled so downstream clients on
+      // different origins can consume responses without extra headers.
       crossOriginEmbedderPolicy: false,
     }),
   );
@@ -69,9 +71,11 @@ export function buildApp(): Express {
 
   // Webhook routes MUST see the raw body so HMAC signatures can be verified.
   // Register them before the JSON parser, but still allow downstream handlers
-  // to access a parsed body via a dedicated middleware.
+  // to access a parsed body via a dedicated middleware. A webhook-scoped rate
+  // limiter protects the signature-verification path from unauthenticated DoS.
   app.use(
     '/api/v1/webhooks',
+    webhookRateLimiter(),
     express.raw({ type: 'application/json', limit: '1mb' }),
     (req, _res, next) => {
       const raw = req.body as Buffer;
