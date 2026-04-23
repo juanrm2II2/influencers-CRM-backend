@@ -2,6 +2,19 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import crypto from 'node:crypto';
 import { NotImplementedError, UnauthorizedError } from '../../utils/errors';
 import { logger } from '../../config/logger';
+import request from 'supertest';
+import app from '../../src/app';
+
+describe('webhooks routes', () => {
+  it('POST /webhooks/provider returns 200', async () => {
+    const res = await request(app)
+      .post('/webhooks/provider')
+      .send({ test: true });
+
+    expect(res.status).toBe(200);
+  });
+});
+
 
 /**
  * Webhook endpoints are unauthenticated in the Express auth sense — they

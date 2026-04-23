@@ -1,6 +1,14 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { scheduleJobs } from '../../src/jobs/scheduler';
+
+describe('scheduler', () => {
+  it('loads without throwing', () => {
+    expect(() => scheduleJobs()).not.toThrow();
+  });
+});
+
 
 export interface Job {
   name: string;
