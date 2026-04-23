@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # syntax=docker/dockerfile:1.7
 
 # ─── deps stage ─────────────────────────────────────────────────────────────
@@ -35,3 +36,42 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+ (process.env.PORT||8080) +'/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/server.js"]
+=======
+# ---------------------------------------------------------------------------
+# Stage 1 — Install dependencies and build
+# ---------------------------------------------------------------------------
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY tsconfig.json ./
+COPY src ./src
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 2 — Production image
+# ---------------------------------------------------------------------------
+FROM node:20-alpine
+
+# Run as non-root for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+COPY --from=builder /app/dist ./dist
+COPY migrations ./migrations
+
+# Switch to non-root user
+USER appuser
+
+EXPOSE 3001
+
+CMD ["node", "dist/index.js"]
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd

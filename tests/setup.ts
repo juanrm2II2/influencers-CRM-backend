@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Test environment defaults. Individual tests can override via process.env.
 process.env.NODE_ENV = 'test';
 process.env.PORT = process.env.PORT ?? '0';
@@ -18,3 +19,12 @@ process.env.AUDIT_HMAC_SECRET =
 process.env.KYC_ENCRYPTION_KEY = process.env.KYC_ENCRYPTION_KEY ?? '0'.repeat(64); // 32 bytes hex
 process.env.RATE_LIMIT_WINDOW_MS = process.env.RATE_LIMIT_WINDOW_MS ?? '60000';
 process.env.RATE_LIMIT_MAX = process.env.RATE_LIMIT_MAX ?? '1000';
+=======
+// Set environment variables before any module imports
+process.env.SUPABASE_URL = 'https://test-project.supabase.co';
+process.env.SUPABASE_SERVICE_KEY = 'test-service-key';
+process.env.SUPABASE_JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes';
+process.env.SCRAPECREATORS_API_KEY = 'test-scrape-api-key';
+process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
+process.env.PORT = '0'; // Use random port in tests
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd

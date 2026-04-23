@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+<<<<<<< HEAD
     "target": "ES2022",
     "module": "commonjs",
     "lib": ["ES2022"],
@@ -25,5 +26,22 @@
     }
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
+=======
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd
   "exclude": ["node_modules", "dist"]
 }

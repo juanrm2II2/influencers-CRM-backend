@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import cors from 'cors';
 import express, { type Express, type Request } from 'express';
 import helmet from 'helmet';
@@ -111,6 +112,93 @@ export function buildApp(): Express {
 
   app.use(notFoundHandler());
   app.use(errorHandler());
+=======
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import influencerRoutes from './routes/influencers';
+import authRoutes from './routes/auth';
+import privacyRoutes from './routes/privacy';
+import { errorHandler } from './middleware/errorHandler';
+import { requireHttps } from './middleware/requireHttps';
+import { requestId } from './middleware/requestId';
+
+/**
+ * Creates and configures the Express application.
+ * Separated from server startup to enable testing without open handles.
+ */
+export function createApp(): express.Express {
+  const app = express();
+
+  // ---------------------------------------------------------------------------
+  // TLS / HTTPS enforcement (production only)
+  // ---------------------------------------------------------------------------
+  app.use(requireHttps);
+
+  // ---------------------------------------------------------------------------
+  // Request-ID correlation (must be early so all downstream logs include it)
+  // ---------------------------------------------------------------------------
+  app.use(requestId);
+
+  // ---------------------------------------------------------------------------
+  // Security headers
+  // ---------------------------------------------------------------------------
+  app.use(helmet());
+
+  // ---------------------------------------------------------------------------
+  // CORS — restrict to configured origins (defaults to localhost in dev)
+  // ---------------------------------------------------------------------------
+  const ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : ['http://localhost:3000'];
+
+  app.use(
+    cors({
+      origin: ALLOWED_ORIGINS,
+      methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      maxAge: 86400, // preflight cache 24 hours
+    })
+  );
+
+  // ---------------------------------------------------------------------------
+  // Body parsing with size limit
+  // ---------------------------------------------------------------------------
+  app.use(express.json({ limit: '1mb' }));
+
+  // ---------------------------------------------------------------------------
+  // Global rate limiter
+  // ---------------------------------------------------------------------------
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100, // limit each IP to 100 requests per window
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many requests, please try again later' },
+    })
+  );
+
+  // ---------------------------------------------------------------------------
+  // Public routes (no auth required)
+  // ---------------------------------------------------------------------------
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok' });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Protected API routes
+  // ---------------------------------------------------------------------------
+  app.use('/api/auth', authRoutes);
+  app.use('/api/influencers', influencerRoutes);
+  app.use('/api/privacy', privacyRoutes);
+
+  // ---------------------------------------------------------------------------
+  // Centralized error handler (must be registered last)
+  // ---------------------------------------------------------------------------
+  app.use(errorHandler);
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd
 
   return app;
 }

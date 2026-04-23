@@ -1,6 +1,7 @@
 node_modules
 dist
 coverage
+<<<<<<< HEAD
 tests
 *.test.ts
 .git
@@ -13,3 +14,16 @@ tests
 *.log
 README.md
 docs
+=======
+.git
+.github
+.env
+*.md
+AUDIT_REPORT.pdf
+tests
+jest.config.js
+tsconfig.test.json
+nodemon.json
+.dockerignore
+Dockerfile
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Influencers CRM — Backend
 
 Pre-ICO audit-ready backend for an Influencer CRM. Built with **Express.js + TypeScript**, backed by **Supabase (PostgreSQL + Auth + Storage)**, sourced by the **ScrapeCreators API**, and deployed to **Railway**.
@@ -103,3 +104,7 @@ See [`docs/architecture.md`](docs/architecture.md).
 ## Delivery status
 
 This commit delivers Phase 1 (bootstrap) plus the structural foundations of Phases 2–9: schema, migrations, RLS, middleware, integration client, module skeletons, jobs, CI. Controller bodies for the domain modules return `501 NOT_IMPLEMENTED` and land in subsequent phases.
+=======
+# influencers-CRM-backend
+Influencers Dashboard (CRM Backend)
+>>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd
