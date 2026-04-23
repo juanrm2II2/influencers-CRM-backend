@@ -1,18 +1,5 @@
-<<<<<<< HEAD
-node_modules
-dist
-coverage
-*.log
-.env
-.env.*
-!.env.example
-.DS_Store
-.vscode
-.idea
-=======
 node_modules/
 dist/
 .env
 *.js.map
 coverage/
->>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd

@@ -1,32 +1,5 @@
 {
   "compilerOptions": {
-<<<<<<< HEAD
-    "target": "ES2022",
-    "module": "commonjs",
-    "lib": ["ES2022"],
-    "moduleResolution": "node",
-    "rootDir": "./",
-    "outDir": "./dist",
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
-    "declaration": false,
-    "sourceMap": true,
-    "baseUrl": "./",
-    "paths": {
-      "@/*": ["src/*"]
-    }
-  },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
-=======
     "target": "ES2020",
     "module": "commonjs",
     "lib": ["ES2020"],
@@ -42,6 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
->>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd
   "exclude": ["node_modules", "dist"]
 }
