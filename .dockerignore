@@ -1,20 +1,6 @@
 node_modules
 dist
 coverage
-<<<<<<< HEAD
-tests
-*.test.ts
-.git
-.github
-.env
-.env.*
-!.env.example
-.vscode
-.idea
-*.log
-README.md
-docs
-=======
 .git
 .github
 .env
@@ -26,4 +12,3 @@ tsconfig.test.json
 nodemon.json
 .dockerignore
 Dockerfile
->>>>>>> 17ef3c073da08a2589cd477774c945045b4ff8fd
