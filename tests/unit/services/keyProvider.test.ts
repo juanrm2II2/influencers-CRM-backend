@@ -2,9 +2,13 @@ import {
   EnvKeyProvider,
   AwsKmsKeyProvider,
   AwsSecretsManagerKeyProvider,
+  RsaPemKeyProvider,
+  JwksKeyProvider,
   createKeyProvider,
   initializeKeyProvider,
   getJwtSecret,
+  getJwtVerificationKey,
+  getJwtAlgorithms,
   getKeyProvider,
   destroyKeyProvider,
 } from '../../../src/services/keyProvider';
@@ -482,4 +486,173 @@ describe('singleton helpers', () => {
     destroyKeyProvider();
     expect(getKeyProvider()).toBeNull();
   });
+
+  it('getJwtAlgorithms defaults to HS256 when no provider initialized', () => {
+    destroyKeyProvider();
+    expect(getJwtAlgorithms()).toEqual(['HS256']);
+  });
+
+  it('getJwtVerificationKey returns the symmetric secret for env provider', async () => {
+    await initializeKeyProvider('env');
+    const key = await getJwtVerificationKey();
+    expect(key).toBe(TEST_SECRET);
+    expect(getJwtAlgorithms()).toEqual(['HS256']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RsaPemKeyProvider
+// ---------------------------------------------------------------------------
+
+// A valid-looking RSA public key (2048-bit, generated for tests only).
+const TEST_RSA_PUBLIC_PEM = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1e+uhldbkLvB+1YrjAWX
+5kZG9H8wK5eH+h6ZqL1iTKY5rD7rEmfB8c6q6n0mRk4mXlKf1RylI0mvKx4zqf1x
+H3I4v4wqYhTq+5uzW6oFM6t/8Ikl2N4h4LuLvdbqzJmG2j9Du5A0zRZjV0qKwZ8V
+kI4w4t8T7qxM5tWj7C9fTtS5mQv5G1wzYr7CjQ8Vj2NlV1YyR4hjQm6b2J6o6uKK
+2T4ZlOvRz8y4aRCSmBqxHx7Ui1cKi9x1OJbQJ9Y0/6eJu5MnFwDKo6o4wRkGuc+R
+qZ4M8UGkR5EN7aTXP2A6Y2bFg0sL9Cf+qE1mMjOeyRhG9Y8m5f/ax4yQTXe9v4pP
+7wIDAQAB
+-----END PUBLIC KEY-----`;
+
+describe('RsaPemKeyProvider', () => {
+  it(
+    'initializes from JWT_PUBLIC_KEY_PEM and returns the PEM for verification',
+    withEnv({ JWT_PUBLIC_KEY_PEM: TEST_RSA_PUBLIC_PEM }, async () => {
+      const provider = new RsaPemKeyProvider();
+      await provider.initialize();
+      expect(await provider.getVerificationKey()).toBe(TEST_RSA_PUBLIC_PEM);
+      expect(provider.getAlgorithms()).toEqual(['RS256']);
+      provider.destroy();
+    }),
+  );
+
+  it(
+    'decodes literal \\n sequences into newlines',
+    withEnv(
+      { JWT_PUBLIC_KEY_PEM: TEST_RSA_PUBLIC_PEM.replace(/\n/g, '\\n') },
+      async () => {
+        const provider = new RsaPemKeyProvider();
+        await provider.initialize();
+        expect(await provider.getVerificationKey()).toContain(
+          '-----BEGIN PUBLIC KEY-----\n',
+        );
+        provider.destroy();
+      },
+    ),
+  );
+
+  it(
+    'rejects values that are not a PEM public key',
+    withEnv({ JWT_PUBLIC_KEY_PEM: 'not-a-pem' }, async () => {
+      const provider = new RsaPemKeyProvider();
+      await expect(provider.initialize()).rejects.toThrow(
+        /does not look like a PEM public key/,
+      );
+    }),
+  );
+
+  it(
+    'throws when JWT_PUBLIC_KEY_PEM is missing',
+    withEnv({ JWT_PUBLIC_KEY_PEM: undefined }, async () => {
+      const provider = new RsaPemKeyProvider();
+      await expect(provider.initialize()).rejects.toThrow(
+        /Missing required env var for rs256-pem provider/,
+      );
+    }),
+  );
+
+  it(
+    'getSecret throws because the provider is verify-only',
+    withEnv({ JWT_PUBLIC_KEY_PEM: TEST_RSA_PUBLIC_PEM }, async () => {
+      const provider = new RsaPemKeyProvider();
+      await provider.initialize();
+      await expect(provider.getSecret()).rejects.toThrow(/verify-only/);
+      provider.destroy();
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// JwksKeyProvider
+// ---------------------------------------------------------------------------
+
+describe('JwksKeyProvider', () => {
+  it(
+    'throws when JWT_JWKS_URI is missing',
+    withEnv({ JWT_JWKS_URI: undefined }, () => {
+      expect(() => new JwksKeyProvider()).toThrow(
+        /Missing required env var for jwks provider/,
+      );
+    }),
+  );
+
+  it(
+    'returns a kid-resolving callback that pins algorithms to RS256',
+    withEnv({ JWT_JWKS_URI: 'https://example.invalid/jwks.json' }, async () => {
+      const mockKey = { getPublicKey: () => '-----BEGIN PUBLIC KEY-----\nx\n-----END PUBLIC KEY-----\n' };
+      const getSigningKey = jest.fn().mockResolvedValue(mockKey);
+
+      // Mock the dynamic import of jwks-rsa
+      jest.doMock(
+        'jwks-rsa',
+        () => jest.fn().mockImplementation(() => ({ getSigningKey })),
+        { virtual: false },
+      );
+
+      const provider = new JwksKeyProvider();
+      await provider.initialize();
+
+      expect(provider.getAlgorithms()).toEqual(['RS256']);
+
+      const callback = await provider.getVerificationKey();
+      expect(typeof callback).toBe('function');
+
+      const resolved: string = await new Promise((resolve, reject) => {
+        (callback as (h: { kid?: string }, cb: (e: Error | null, k?: string) => void) => void)(
+          { kid: 'abc' },
+          (err, key) => (err ? reject(err) : resolve(key!)),
+        );
+      });
+      expect(resolved).toContain('BEGIN PUBLIC KEY');
+      expect(getSigningKey).toHaveBeenCalledWith('abc');
+
+      // Missing kid must surface an error through the callback.
+      const err: Error = await new Promise((resolve) => {
+        (callback as (h: { kid?: string }, cb: (e: Error | null, k?: string) => void) => void)(
+          {},
+          (e) => resolve(e as Error),
+        );
+      });
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toMatch(/kid/);
+
+      provider.destroy();
+      jest.dontMock('jwks-rsa');
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Factory extensions
+// ---------------------------------------------------------------------------
+
+describe('createKeyProvider (asymmetric variants)', () => {
+  it(
+    'creates RsaPemKeyProvider for name "rs256-pem"',
+    withEnv({ JWT_PUBLIC_KEY_PEM: TEST_RSA_PUBLIC_PEM }, () => {
+      const provider = createKeyProvider('rs256-pem');
+      expect(provider.name).toBe('rs256-pem');
+      provider.destroy();
+    }),
+  );
+
+  it(
+    'creates JwksKeyProvider for name "jwks"',
+    withEnv({ JWT_JWKS_URI: 'https://example.invalid/jwks.json' }, () => {
+      const provider = createKeyProvider('jwks');
+      expect(provider.name).toBe('jwks');
+      provider.destroy();
+    }),
+  );
 });

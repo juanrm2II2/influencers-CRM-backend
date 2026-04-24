@@ -1,19 +1,26 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET!;
 
 /**
  * Generate a valid JWT token for testing.
+ *
+ * A random `jti` is included by default — the `authenticate` middleware
+ * rejects tokens without one.  Callers may override it by passing
+ * `{ jwtid: '...' }` in `options`.
  */
 export function generateToken(
   payload: { sub: string; email?: string; role?: string },
   options?: jwt.SignOptions
 ): string {
-  return jwt.sign(payload, JWT_SECRET, {
+  const signOptions: jwt.SignOptions = {
     algorithm: 'HS256',
     expiresIn: '1h',
+    jwtid: crypto.randomUUID(),
     ...options,
-  });
+  };
+  return jwt.sign(payload, JWT_SECRET, signOptions);
 }
 
 /** A valid UUID for test use */

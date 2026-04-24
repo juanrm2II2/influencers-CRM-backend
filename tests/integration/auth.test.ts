@@ -25,8 +25,13 @@ function setupChain() {
 
 setupChain();
 
+const mockAdminSignOut = jest.fn().mockResolvedValue({ error: null });
+
 jest.mock('../../src/services/supabase', () => ({
-  supabase: { from: mockFrom },
+  supabase: {
+    from: mockFrom,
+    auth: { admin: { signOut: mockAdminSignOut } },
+  },
 }));
 
 jest.mock('../../src/logger', () => ({
@@ -65,6 +70,7 @@ beforeEach(() => {
   setupChain();
   mockIsRevoked.mockResolvedValue(false);
   mockRevoke.mockResolvedValue(undefined);
+  mockAdminSignOut.mockResolvedValue({ error: null });
 });
 
 describe('POST /api/auth/logout', () => {
@@ -80,6 +86,19 @@ describe('POST /api/auth/logout', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Logged out successfully');
+    expect(mockRevoke).toHaveBeenCalledTimes(1);
+    // Supabase refresh tokens should be revoked globally.
+    expect(mockAdminSignOut).toHaveBeenCalledWith('user-1', 'global');
+  });
+
+  it('should still succeed even if Supabase admin signOut fails', async () => {
+    mockAdminSignOut.mockResolvedValue({ error: new Error('transient') });
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
     expect(mockRevoke).toHaveBeenCalledTimes(1);
   });
 

@@ -203,7 +203,7 @@ describe('Authorization Bypass Tests', () => {
     const noRoleToken = jwt.sign(
       { sub: 'user-1', email: 'user@test.com' },
       JWT_SECRET,
-      { algorithm: 'HS256' }
+      { algorithm: 'HS256', jwtid: `no-role-${Date.now()}` }
     );
     const res = await request(app)
       .delete(`/api/influencers/${TEST_UUID}`)
