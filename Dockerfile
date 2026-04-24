@@ -10,7 +10,7 @@
 # time, sign the resulting image with cosign, and verify the signature
 # during deployment.  Tag-only references are mutable and can be
 # back-dated by an attacker who controls the registry mirror.
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 — Production image
 # ---------------------------------------------------------------------------
-FROM node:20-alpine
+FROM node:25-alpine
 
 # Run as non-root for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
