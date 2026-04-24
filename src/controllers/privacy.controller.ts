@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../logger';
 import {
   upsertConsent,
@@ -18,6 +19,19 @@ function handleError(res: Response, err: unknown, context: string): void {
   res.status(500).json({ error: 'Internal server error' });
 }
 
+/**
+ * Resolve the per-request RLS-scoped Supabase client attached by the
+ * `authenticate` middleware.  Returns `null` and writes a 401 when missing.
+ */
+function getScoped(req: { scopedClient?: SupabaseClient; user?: { sub: string } }, res: Response): SupabaseClient | null {
+  const client = req.scopedClient;
+  if (!client || !req.user?.sub) {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  return client;
+}
+
 // ---------------------------------------------------------------------------
 // Consent management
 // ---------------------------------------------------------------------------
@@ -25,8 +39,10 @@ function handleError(res: Response, err: unknown, context: string): void {
 /** GET /api/privacy/consent — list all consent records for the authenticated user */
 export async function listConsents(req: Request, res: Response): Promise<void> {
   try {
+    const client = getScoped(req, res);
+    if (!client) return;
     const userId = req.user!.sub;
-    const consents = await getConsents(userId);
+    const consents = await getConsents(client, userId);
     res.json({ data: consents });
   } catch (err) {
     handleError(res, err, 'listConsents');
@@ -39,10 +55,12 @@ export async function updateConsent(
   res: Response
 ): Promise<void> {
   try {
+    const client = getScoped(req, res);
+    if (!client) return;
     const userId = req.user!.sub;
     const { consent_type, granted } = req.body;
 
-    const result = await upsertConsent(userId, consent_type, granted, req.ip);
+    const result = await upsertConsent(client, userId, consent_type, granted, req.ip);
 
     if (!result) {
       res.status(500).json({ error: 'Failed to update consent' });
@@ -65,8 +83,10 @@ export async function listDsarRequests(
   res: Response
 ): Promise<void> {
   try {
+    const client = getScoped(req, res);
+    if (!client) return;
     const userId = req.user!.sub;
-    const requests = await getDsarRequests(userId);
+    const requests = await getDsarRequests(client, userId);
     res.json({ data: requests });
   } catch (err) {
     handleError(res, err, 'listDsarRequests');
@@ -79,11 +99,13 @@ export async function createDsar(
   res: Response
 ): Promise<void> {
   try {
+    const client = getScoped(req, res);
+    if (!client) return;
     const userId = req.user!.sub;
     const userEmail = req.user!.email;
     const { request_type } = req.body;
 
-    const result = await createDsarRequest(userId, userEmail, request_type);
+    const result = await createDsarRequest(client, userId, userEmail, request_type);
 
     if (!result) {
       res.status(500).json({ error: 'Failed to create request' });

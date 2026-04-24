@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { supabase } from '../services/supabase';
 import { logger } from '../logger';
 
 /**
@@ -8,7 +7,9 @@ import { logger } from '../logger';
  * endpoints.
  *
  * Must be placed **after** the `authenticate` middleware so that
- * `req.user` is populated.
+ * `req.user` and `req.scopedClient` are populated.  Uses the per-request
+ * RLS-scoped Supabase client so that one user cannot read another user's
+ * consent rows.
  */
 export async function requireConsent(
   req: Request,
@@ -16,14 +17,15 @@ export async function requireConsent(
   next: NextFunction
 ): Promise<void> {
   const userId = req.user?.sub;
+  const client = req.scopedClient;
 
-  if (!userId) {
+  if (!userId || !client) {
     res.status(401).json({ error: 'Authentication required' });
     return;
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from('consent')
       .select('granted')
       .eq('user_id', userId)

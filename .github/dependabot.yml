@@ -1,0 +1,57 @@
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # npm dependencies — group security patches and minor updates so reviewers
+  # are not flooded with PRs.  Security advisories still ship as their own
+  # PR with high priority.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      production-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — keep workflow runner versions current to pick up
+  # supply-chain security advisories promptly.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    labels:
+      - dependencies
+      - github-actions
+
+  # ---------------------------------------------------------------------------
+  # Docker — the production image base.  Dependabot will open a PR with the
+  # new digest whenever the upstream tag is updated.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    labels:
+      - dependencies
+      - docker

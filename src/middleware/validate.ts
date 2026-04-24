@@ -142,6 +142,47 @@ const VALID_CONSENT_TYPES = ['data_processing', 'marketing', 'analytics', 'third
 const VALID_DSAR_TYPES = ['access', 'erasure', 'export'] as const;
 const VALID_DSAR_STATUSES = ['pending', 'processing', 'completed', 'rejected'] as const;
 
+/** GET /api/influencers — validates filter / pagination query params (audit M6) */
+export function validateListQuery(req: Request, res: Response, next: NextFunction): void {
+  const { platform, status, page, limit, min_followers } = req.query as Record<string, unknown>;
+
+  if (platform !== undefined &&
+      (typeof platform !== 'string' ||
+       !VALID_PLATFORMS.includes(platform as typeof VALID_PLATFORMS[number]))) {
+    res.status(400).json({ error: `platform must be one of: ${VALID_PLATFORMS.join(', ')}` });
+    return;
+  }
+  if (status !== undefined &&
+      (typeof status !== 'string' ||
+       !VALID_STATUSES.includes(status as typeof VALID_STATUSES[number]))) {
+    res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+    return;
+  }
+  if (page !== undefined) {
+    const p = Number(page);
+    if (!Number.isInteger(p) || p < 1) {
+      res.status(400).json({ error: 'page must be a positive integer' });
+      return;
+    }
+  }
+  if (limit !== undefined) {
+    const l = Number(limit);
+    if (!Number.isInteger(l) || l < 1 || l > 100) {
+      res.status(400).json({ error: 'limit must be an integer between 1 and 100' });
+      return;
+    }
+  }
+  if (min_followers !== undefined) {
+    const m = Number(min_followers);
+    if (!Number.isFinite(m) || m < 0) {
+      res.status(400).json({ error: 'min_followers must be a non-negative number' });
+      return;
+    }
+  }
+
+  next();
+}
+
 /** POST /api/privacy/consent */
 export function validateConsent(req: Request, res: Response, next: NextFunction): void {
   const { consent_type, granted } = req.body ?? {};

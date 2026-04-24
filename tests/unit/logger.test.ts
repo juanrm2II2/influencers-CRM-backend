@@ -1,0 +1,54 @@
+import { logger } from '../../src/logger';
+
+/**
+ * Smoke test for the redaction config in src/logger.ts (audit M9).
+ *
+ * Verifies that:
+ *  - secrets nested under err.config.headers / err.response.headers are
+ *    censored before reaching the JSON sink, and
+ *  - the custom err serializer drops AxiosError-style `config`/`request`
+ *    metadata so log aggregators never see it at all.
+ */
+describe('logger redaction (audit M9)', () => {
+  let written = '';
+
+  beforeAll(() => {
+    // Pino writes via the `[pino.symbols.streamSym]` stream — easier to
+    // intercept process.stdout.write since pino flushes synchronously
+    // for `error` level by default in the test environment.
+    const origWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as { write: (chunk: string | Uint8Array) => boolean }).write = (chunk) => {
+      written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+      return origWrite(chunk);
+    };
+  });
+
+  beforeEach(() => {
+    written = '';
+  });
+
+  it('redacts top-level connection strings', () => {
+    logger.error({ DATABASE_URL: 'postgres://user:secret@host/db' }, 'oops');
+    expect(written).toContain('[REDACTED]');
+    expect(written).not.toContain('postgres://user:secret@host/db');
+  });
+
+  it('strips AxiosError config / request / response.headers via the err serializer', () => {
+    const err = Object.assign(new Error('boom'), {
+      name: 'AxiosError',
+      code: 'ETIMEDOUT',
+      config: { headers: { Authorization: 'Bearer should-not-leak' } },
+      request: { headers: { 'x-api-key': 'should-not-leak' } },
+      response: {
+        status: 502,
+        headers: { 'set-cookie': 'session=should-not-leak' },
+        config: { headers: { Authorization: 'Bearer should-not-leak' } },
+      },
+    });
+    logger.error({ err }, 'upstream error');
+    expect(written).toContain('boom');
+    expect(written).toContain('AxiosError');
+    expect(written).toContain('502');
+    expect(written).not.toContain('should-not-leak');
+  });
+});

@@ -61,6 +61,9 @@ describe('auditLog middleware — before-state capture', () => {
       body: { status: 'active' },
       ip: '127.0.0.1',
       user: { sub: 'user-1', email: 'test@test.com', iat: 0 },
+      // The middleware now reads its DB client from req.scopedClient
+      // (audit H1) so the before-state fetch is RLS-scoped.
+      scopedClient: { from: mockFrom } as unknown as Request['scopedClient'],
     };
 
     const jsonFn = jest.fn().mockReturnThis();

@@ -3,6 +3,7 @@ const mockFrom = jest.fn();
 
 jest.mock('../../../src/services/supabase', () => ({
   supabase: { from: mockFrom },
+  createScopedClient: jest.fn(() => ({ from: mockFrom })),
 }));
 
 jest.mock('../../../src/logger', () => ({
@@ -27,6 +28,10 @@ import {
   anonymizeAuditLogIps,
   anonymizeIp,
 } from '../../../src/services/privacy';
+
+// Stand-in scoped client object — its `.from()` is the same mock as the
+// service-role client because the integration tests share one mockFrom.
+const scopedClient = { from: mockFrom } as unknown as Parameters<typeof upsertConsent>[0];
 
 const mockInsert = jest.fn();
 const mockSelect = jest.fn();
@@ -105,7 +110,7 @@ describe('privacy service', () => {
       const consentRecord = { id: 'c1', user_id: 'user-1', consent_type: 'marketing', granted: true };
       chain.single.mockResolvedValue({ data: consentRecord, error: null });
 
-      const result = await upsertConsent('user-1', 'marketing', true, '1.2.3.4');
+      const result = await upsertConsent(scopedClient, 'user-1', 'marketing', true, '1.2.3.4');
 
       expect(mockFrom).toHaveBeenCalledWith('consent');
       expect(result).toEqual(consentRecord);
@@ -116,7 +121,7 @@ describe('privacy service', () => {
       mockFrom.mockReturnValue(chain);
       chain.single.mockResolvedValue({ data: null, error: { message: 'DB error' } });
 
-      const result = await upsertConsent('user-1', 'marketing', false);
+      const result = await upsertConsent(scopedClient, 'user-1', 'marketing', false);
 
       expect(result).toBeNull();
     });
@@ -132,7 +137,7 @@ describe('privacy service', () => {
       const consents = [{ id: 'c1', consent_type: 'marketing', granted: true }];
       chain.order.mockResolvedValue({ data: consents, error: null });
 
-      const result = await getConsents('user-1');
+      const result = await getConsents(scopedClient, 'user-1');
 
       expect(mockFrom).toHaveBeenCalledWith('consent');
       expect(result).toEqual(consents);
@@ -143,7 +148,7 @@ describe('privacy service', () => {
       mockFrom.mockReturnValue(chain);
       chain.order.mockResolvedValue({ data: null, error: { message: 'error' } });
 
-      const result = await getConsents('user-1');
+      const result = await getConsents(scopedClient, 'user-1');
 
       expect(result).toEqual([]);
     });
@@ -159,7 +164,7 @@ describe('privacy service', () => {
       const dsarRecord = { id: 'd1', user_id: 'user-1', request_type: 'access', status: 'pending' };
       chain.single.mockResolvedValue({ data: dsarRecord, error: null });
 
-      const result = await createDsarRequest('user-1', 'test@test.com', 'access');
+      const result = await createDsarRequest(scopedClient, 'user-1', 'test@test.com', 'access');
 
       expect(mockFrom).toHaveBeenCalledWith('dsar_requests');
       expect(result).toEqual(dsarRecord);
@@ -170,7 +175,7 @@ describe('privacy service', () => {
       mockFrom.mockReturnValue(chain);
       chain.single.mockResolvedValue({ data: null, error: { message: 'error' } });
 
-      const result = await createDsarRequest('user-1', undefined, 'erasure');
+      const result = await createDsarRequest(scopedClient, 'user-1', undefined, 'erasure');
 
       expect(result).toBeNull();
     });
@@ -186,7 +191,7 @@ describe('privacy service', () => {
       const requests = [{ id: 'd1', request_type: 'access', status: 'pending' }];
       chain.order.mockResolvedValue({ data: requests, error: null });
 
-      const result = await getDsarRequests('user-1');
+      const result = await getDsarRequests(scopedClient, 'user-1');
 
       expect(result).toEqual(requests);
     });
@@ -196,7 +201,7 @@ describe('privacy service', () => {
       mockFrom.mockReturnValue(chain);
       chain.order.mockResolvedValue({ data: null, error: { message: 'error' } });
 
-      const result = await getDsarRequests('user-1');
+      const result = await getDsarRequests(scopedClient, 'user-1');
 
       expect(result).toEqual([]);
     });

@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { recordAuditLog } from '../services/auditLog';
-import { supabase } from '../services/supabase';
 import { logger } from '../logger';
 import { anonymizeIp } from '../services/privacy';
 
@@ -12,12 +11,19 @@ const AUDITABLE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 /**
  * Fetch the current state of a resource from the database before a mutation.
  * Returns `undefined` when the resource cannot be identified or found.
+ *
+ * Uses the per-request RLS-scoped client (set by `authenticate`) so that
+ * the audit-log "before-state" can never include a row that the caller
+ * could not otherwise read.
  */
 async function fetchBeforeState(
   req: Request
 ): Promise<Record<string, unknown> | undefined> {
   const id = req.params.id as string | undefined;
   if (!id) return undefined;
+
+  const client = req.scopedClient;
+  if (!client) return undefined;
 
   // Determine the table from the route path
   const basePath = req.baseUrl || '';
@@ -30,7 +36,7 @@ async function fetchBeforeState(
   if (!table) return undefined;
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await client
       .from(table)
       .select('*')
       .eq('id', id)

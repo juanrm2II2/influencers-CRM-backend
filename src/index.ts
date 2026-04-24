@@ -4,11 +4,37 @@ import { logger } from './logger';
 import { validateEnv } from './validateEnv';
 import { initializeKeyProvider, destroyKeyProvider } from './services/keyProvider';
 import { tokenBlocklist } from './services/tokenBlocklist';
+import { supabase } from './services/supabase';
+
+/**
+ * Verify that the Supabase JS client exposes `auth.admin.signOut` so that
+ * `logout` can globally revoke the user's refresh tokens (audit L2).
+ *
+ * If the SDK ever removes or renames this method we want a fatal startup
+ * error rather than the silent skip we previously logged at runtime — a
+ * compromised access token paired with an unrevoked refresh token would
+ * otherwise let an attacker keep minting fresh access tokens until the
+ * refresh-token TTL expires.
+ */
+function assertSupabaseAdminSignOut(): void {
+  const admin = (
+    supabase as unknown as {
+      auth: { admin?: { signOut?: unknown } };
+    }
+  ).auth?.admin;
+  if (!admin || typeof admin.signOut !== 'function') {
+    throw new Error(
+      'supabase.auth.admin.signOut is unavailable — global refresh-token revocation cannot be performed. ' +
+        'Update @supabase/supabase-js or check service-role key permissions.',
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Validate required environment variables at startup
 // ---------------------------------------------------------------------------
 validateEnv();
+assertSupabaseAdminSignOut();
 
 const app = createApp();
 

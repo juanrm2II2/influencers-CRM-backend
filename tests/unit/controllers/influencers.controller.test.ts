@@ -42,6 +42,7 @@ mockFrom.mockReturnValue(queryChain);
 
 jest.mock('../../../src/services/supabase', () => ({
   supabase: { from: mockFrom },
+  createScopedClient: jest.fn(() => ({ from: mockFrom })),
 }));
 
 jest.mock('../../../src/services/scrapeCreators', () => ({
@@ -71,6 +72,19 @@ import { scrapeProfile } from '../../../src/services/scrapeCreators';
 
 const mockedScrapeProfile = scrapeProfile as jest.MockedFunction<typeof scrapeProfile>;
 
+
+
+/** Add the per-request RLS-scoped client + user that the authenticate
+ * middleware would otherwise attach to req.  All controller tests run
+ * downstream of authenticate, so populating these here keeps the
+ * controllers happy even when each test only constructs a minimal req
+ * literal. */
+function withAuth<T extends Record<string, unknown>>(req: T): T & { user: { sub: string; email: string }; scopedClient: { from: jest.Mock } } {
+  return Object.assign(req, {
+    user: { sub: 'user-1', email: 'user@test.com' },
+    scopedClient: { from: mockFrom },
+  });
+}
 function mockRes(): Partial<Response> {
   const res: Partial<Response> = {};
   res.status = jest.fn().mockReturnValue(res);
@@ -105,7 +119,7 @@ describe('searchInfluencer', () => {
     const req = { body: { handle: 'testuser', platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await searchInfluencer(req, res);
+    await searchInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(SAMPLE_INFLUENCER);
@@ -115,7 +129,7 @@ describe('searchInfluencer', () => {
     const req = { body: { platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await searchInfluencer(req, res);
+    await searchInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
   });
@@ -124,7 +138,7 @@ describe('searchInfluencer', () => {
     const req = { body: { handle: 'testuser' } } as Request;
     const res = mockRes() as Response;
 
-    await searchInfluencer(req, res);
+    await searchInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
   });
@@ -136,7 +150,7 @@ describe('searchInfluencer', () => {
     const req = { body: { handle: 'testuser', platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await searchInfluencer(req, res);
+    await searchInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
@@ -148,7 +162,7 @@ describe('searchInfluencer', () => {
     const req = { body: { handle: 'testuser', platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await searchInfluencer(req, res);
+    await searchInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -164,7 +178,7 @@ describe('getInfluencers', () => {
     const req = { query: {} } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.json).toHaveBeenCalledWith({
       data: influencers,
@@ -180,7 +194,7 @@ describe('getInfluencers', () => {
     const req = { query: { platform: 'tiktok' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(mockEq).toHaveBeenCalledWith('platform', 'tiktok');
   });
@@ -193,7 +207,7 @@ describe('getInfluencers', () => {
     const req = { query: { status: 'active' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(mockEq).toHaveBeenCalledWith('status', 'active');
   });
@@ -206,7 +220,7 @@ describe('getInfluencers', () => {
     const req = { query: { niche: 'tech' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(mockIlike).toHaveBeenCalledWith('niche', '%tech%');
   });
@@ -219,7 +233,7 @@ describe('getInfluencers', () => {
     const req = { query: { niche: '100%_done' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     // % and _ should be escaped
     expect(mockIlike).toHaveBeenCalledWith('niche', '%100\\%\\_done%');
@@ -229,7 +243,7 @@ describe('getInfluencers', () => {
     const req = { query: { min_followers: '-1' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
   });
@@ -238,7 +252,7 @@ describe('getInfluencers', () => {
     const req = { query: { min_followers: 'abc' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
   });
@@ -251,7 +265,7 @@ describe('getInfluencers', () => {
     const req = { query: { min_followers: '1000' } } as unknown as Request;
     const res = mockRes() as Response;
 
-    await getInfluencers(req, res);
+    await getInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(mockGte).toHaveBeenCalledWith('followers', 1000);
   });
@@ -267,7 +281,7 @@ describe('getInfluencerById', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await getInfluencerById(req, res);
+    await getInfluencerById(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.json).toHaveBeenCalledWith({
       ...SAMPLE_INFLUENCER,
@@ -281,7 +295,7 @@ describe('getInfluencerById', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await getInfluencerById(req, res);
+    await getInfluencerById(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
@@ -294,7 +308,7 @@ describe('getInfluencerById', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await getInfluencerById(req, res);
+    await getInfluencerById(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -308,7 +322,7 @@ describe('updateInfluencer', () => {
     const req = { params: { id: TEST_UUID }, body: { status: 'active' } } as any;
     const res = mockRes() as Response;
 
-    await updateInfluencer(req, res);
+    await updateInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.json).toHaveBeenCalledWith(updated);
   });
@@ -317,7 +331,7 @@ describe('updateInfluencer', () => {
     const req = { params: { id: TEST_UUID }, body: {} } as any;
     const res = mockRes() as Response;
 
-    await updateInfluencer(req, res);
+    await updateInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'No valid fields to update' });
@@ -329,7 +343,7 @@ describe('updateInfluencer', () => {
     const req = { params: { id: TEST_UUID }, body: { niche: 'tech' } } as any;
     const res = mockRes() as Response;
 
-    await updateInfluencer(req, res);
+    await updateInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
@@ -341,7 +355,7 @@ describe('updateInfluencer', () => {
     const req = { params: { id: TEST_UUID }, body: { niche: 'tech' } } as any;
     const res = mockRes() as Response;
 
-    await updateInfluencer(req, res);
+    await updateInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -354,7 +368,7 @@ describe('deleteInfluencer', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await deleteInfluencer(req, res);
+    await deleteInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.send).toHaveBeenCalled();
@@ -366,7 +380,7 @@ describe('deleteInfluencer', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await deleteInfluencer(req, res);
+    await deleteInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
@@ -378,7 +392,7 @@ describe('deleteInfluencer', () => {
     const req = { params: { id: TEST_UUID } } as any;
     const res = mockRes() as Response;
 
-    await deleteInfluencer(req, res);
+    await deleteInfluencer(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -394,7 +408,7 @@ describe('createOutreach', () => {
     } as any;
     const res = mockRes() as Response;
 
-    await createOutreach(req, res);
+    await createOutreach(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(SAMPLE_OUTREACH);
@@ -409,7 +423,7 @@ describe('createOutreach', () => {
     } as any;
     const res = mockRes() as Response;
 
-    await createOutreach(req, res);
+    await createOutreach(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
@@ -423,7 +437,7 @@ describe('createOutreach', () => {
     } as any;
     const res = mockRes() as Response;
 
-    await createOutreach(req, res);
+    await createOutreach(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Influencer not found' });
@@ -442,7 +456,7 @@ describe('bulkSearchInfluencers', () => {
     const req = { body: { handles: ['user1', 'user2'], platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await bulkSearchInfluencers(req, res);
+    await bulkSearchInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(201);
     const result = (res.json as jest.Mock).mock.calls[0][0];
@@ -454,7 +468,7 @@ describe('bulkSearchInfluencers', () => {
     const req = { body: { platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await bulkSearchInfluencers(req, res);
+    await bulkSearchInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
   });
@@ -473,7 +487,7 @@ describe('bulkSearchInfluencers', () => {
     const req = { body: { handles: ['user1', 'user2'], platform: 'tiktok' } } as Request;
     const res = mockRes() as Response;
 
-    await bulkSearchInfluencers(req, res);
+    await bulkSearchInfluencers(withAuth(req as unknown as Record<string, unknown>) as any, res);
 
     const result = (res.json as jest.Mock).mock.calls[0][0];
     expect(result.succeeded).toBe(1);

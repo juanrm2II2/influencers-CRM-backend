@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { z } from 'zod/v4';
+import { LRUCache } from 'lru-cache';
 import { Platform, Influencer } from '../types';
 import { logger } from '../logger';
 
@@ -7,6 +8,30 @@ const SCRAPECREATORS_API_KEY = process.env.SCRAPECREATORS_API_KEY;
 
 if (!SCRAPECREATORS_API_KEY) {
   throw new Error('Missing SCRAPECREATORS_API_KEY environment variable');
+}
+
+/**
+ * Short-lived response cache keyed on `<platform>:<handle>` (M1).
+ *
+ * Caps abusive bulk-search amplification by collapsing repeat lookups
+ * within the TTL window into a single outbound API call, drastically
+ * reducing both latency and paid-API quota usage.  TTL defaults to 10
+ * minutes — short enough that profile metrics remain fresh, long enough
+ * to absorb real-world bursts.
+ */
+const SCRAPER_CACHE_TTL_MS = Math.max(
+  60_000,
+  parseInt(process.env.SCRAPER_CACHE_TTL_MS ?? `${10 * 60_000}`, 10) || 10 * 60_000,
+);
+const SCRAPER_CACHE_MAX = 1_000;
+const scraperCache = new LRUCache<string, Omit<Influencer, 'id' | 'user_id' | 'created_at'>>({
+  max: SCRAPER_CACHE_MAX,
+  ttl: SCRAPER_CACHE_TTL_MS,
+});
+
+/** Visible for tests so the cache can be cleared between runs. */
+export function _clearScraperCache(): void {
+  scraperCache.clear();
 }
 
 const scrapeClient = axios.create({
@@ -30,6 +55,38 @@ scrapeClient.interceptors.request.use((config) => {
 });
 
 /**
+ * Tight numeric schema for upstream-supplied counts.
+ *
+ * Rejects NaN / Infinity / negative / non-integer values and any value above
+ * `1e10` (well beyond any plausible follower count).  Enforcing these bounds
+ * up-front prevents a hostile or compromised upstream from poisoning the DB
+ * with `Infinity`-derived `engagement_rate` values, breaking analytics, or
+ * triggering pathological numeric behaviour in downstream consumers (M7).
+ */
+const Count = z
+  .number()
+  .int()
+  .nonnegative()
+  .finite()
+  .max(1e10);
+
+/**
+ * Tight URL schema for upstream-supplied profile / avatar URLs.
+ *
+ * Rejects anything that isn't a syntactically valid HTTPS URL — preventing
+ * `javascript:` / `data:` / `file:` URLs that could otherwise be rendered
+ * verbatim by downstream UIs and lead to stored XSS or browser-side SSRF
+ * (M8).  Failing values are stripped via `.optional().catch(undefined)` at
+ * the field level so a single bad URL does not poison the entire response.
+ */
+const HttpsUrl = z
+  .string()
+  .url()
+  .refine((u) => /^https:\/\//i.test(u), {
+    message: 'URL must use the https:// scheme',
+  });
+
+/**
  * Zod schema for the ScrapeCreators API response profile object.
  * Validates the shape of the response and coerces/strips unexpected fields.
  */
@@ -42,24 +99,24 @@ const ScrapeCreatorsProfileSchema = z.object({
   biography: z.optional(z.string()),
   bio: z.optional(z.string()),
   signature: z.optional(z.string()),
-  followerCount: z.optional(z.number()),
-  followers: z.optional(z.number()),
-  followersCount: z.optional(z.number()),
-  followingCount: z.optional(z.number()),
-  following: z.optional(z.number()),
-  friendCount: z.optional(z.number()),
-  heartCount: z.optional(z.number()),
-  diggCount: z.optional(z.number()),
-  videoCount: z.optional(z.number()),
-  avgViews: z.optional(z.number()),
-  avg_views: z.optional(z.number()),
-  avgLikes: z.optional(z.number()),
-  avg_likes: z.optional(z.number()),
-  mediaCount: z.optional(z.number()),
-  avatarThumb: z.optional(z.string()),
-  avatarLarger: z.optional(z.string()),
-  profilePicUrl: z.optional(z.string()),
-  profile_pic_url: z.optional(z.string()),
+  followerCount: Count.optional().catch(undefined),
+  followers: Count.optional().catch(undefined),
+  followersCount: Count.optional().catch(undefined),
+  followingCount: Count.optional().catch(undefined),
+  following: Count.optional().catch(undefined),
+  friendCount: Count.optional().catch(undefined),
+  heartCount: Count.optional().catch(undefined),
+  diggCount: Count.optional().catch(undefined),
+  videoCount: Count.optional().catch(undefined),
+  avgViews: Count.optional().catch(undefined),
+  avg_views: Count.optional().catch(undefined),
+  avgLikes: Count.optional().catch(undefined),
+  avg_likes: Count.optional().catch(undefined),
+  mediaCount: Count.optional().catch(undefined),
+  avatarThumb: HttpsUrl.optional().catch(undefined),
+  avatarLarger: HttpsUrl.optional().catch(undefined),
+  profilePicUrl: HttpsUrl.optional().catch(undefined),
+  profile_pic_url: HttpsUrl.optional().catch(undefined),
 }).passthrough();
 
 /**
@@ -79,7 +136,7 @@ function extractProfileData(
   data: ScrapeCreatorsProfile,
   handle: string,
   platform: Platform
-): Omit<Influencer, 'id' | 'created_at'> {
+): Omit<Influencer, 'id' | 'user_id' | 'created_at'> {
   let full_name: string | null = null;
   let bio: string | null = null;
   let followers: number | null = null;
@@ -147,8 +204,10 @@ function extractProfileData(
   }
 
   const engagement_rate =
-    followers && avg_likes && followers > 0
-      ? (avg_likes / followers) * 100
+    Number.isFinite(followers as number) &&
+    Number.isFinite(avg_likes as number) &&
+    (followers as number) > 0
+      ? Math.min(100, Math.max(0, ((avg_likes as number) / (followers as number)) * 100))
       : null;
 
   return {
@@ -173,9 +232,18 @@ function extractProfileData(
 export async function scrapeProfile(
   handle: string,
   platform: Platform
-): Promise<Omit<Influencer, 'id' | 'created_at'>> {
+): Promise<Omit<Influencer, 'id' | 'user_id' | 'created_at'>> {
   // Normalize handle to lowercase to prevent duplicate records
   const normalizedHandle = handle.toLowerCase();
+  const cacheKey = `${platform}:${normalizedHandle}`;
+
+  // Cache short-circuit (M1) — return a deep clone so callers can mutate
+  // the result without poisoning the shared cache entry.
+  const cached = scraperCache.get(cacheKey);
+  if (cached) {
+    return { ...cached, last_scraped: cached.last_scraped };
+  }
+
   let url: string;
 
   switch (platform) {
@@ -213,5 +281,7 @@ export async function scrapeProfile(
       ? (validated.data as ScrapeCreatorsProfile)
       : (validated as ScrapeCreatorsProfile);
 
-  return extractProfileData(profileData, normalizedHandle, platform);
+  const result = extractProfileData(profileData, normalizedHandle, platform);
+  scraperCache.set(cacheKey, result);
+  return result;
 }

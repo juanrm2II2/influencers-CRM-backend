@@ -61,6 +61,7 @@ function mockQueryResolve(value: { data: unknown; error: unknown; count?: number
 
 jest.mock('../../src/services/supabase', () => ({
   supabase: { from: mockFrom },
+  createScopedClient: jest.fn(() => ({ from: mockFrom })),
 }));
 
 jest.mock('../../src/services/scrapeCreators', () => ({

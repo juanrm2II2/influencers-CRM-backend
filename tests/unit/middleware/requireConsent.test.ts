@@ -22,8 +22,11 @@ jest.mock('../../../src/logger', () => ({
 import { requireConsent } from '../../../src/middleware/requireConsent';
 
 function mockReq(sub?: string): Partial<Request> {
+  // Build a Request-like object that exposes the scopedClient that
+  // requireConsent now reads (audit H1).
   return {
     user: sub ? { sub } : undefined,
+    scopedClient: sub ? ({ from: mockFrom } as unknown as Request['scopedClient']) : undefined,
   } as Partial<Request>;
 }
 

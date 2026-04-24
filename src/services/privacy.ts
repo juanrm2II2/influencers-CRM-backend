@@ -1,3 +1,4 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { logger } from '../logger';
 import { ConsentType, DsarRequestType, DsarStatus } from '../types';
@@ -8,8 +9,11 @@ import { ConsentType, DsarRequestType, DsarStatus } from '../types';
 
 /**
  * Record or update a user's consent for a specific type.
+ *
+ * @param client - per-request RLS-scoped Supabase client (anon key + caller JWT)
  */
 export async function upsertConsent(
+  client: SupabaseClient,
   userId: string,
   consentType: ConsentType,
   granted: boolean,
@@ -34,7 +38,7 @@ export async function upsertConsent(
     payload.ip_address = ipAddress;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from('consent')
     .upsert(payload, { onConflict: 'user_id,consent_type', ignoreDuplicates: false })
     .select()
@@ -50,11 +54,14 @@ export async function upsertConsent(
 
 /**
  * Get all consent records for a user.
+ *
+ * @param client - per-request RLS-scoped Supabase client
  */
 export async function getConsents(
+  client: SupabaseClient,
   userId: string
 ): Promise<Record<string, unknown>[]> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from('consent')
     .select('*')
     .eq('user_id', userId)
@@ -74,13 +81,16 @@ export async function getConsents(
 
 /**
  * Create a new DSAR request.
+ *
+ * @param client - per-request RLS-scoped Supabase client
  */
 export async function createDsarRequest(
+  client: SupabaseClient,
   userId: string,
   userEmail: string | undefined,
   requestType: DsarRequestType
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from('dsar_requests')
     .insert({
       user_id: userId,
@@ -101,11 +111,14 @@ export async function createDsarRequest(
 
 /**
  * Get all DSAR requests for a user.
+ *
+ * @param client - per-request RLS-scoped Supabase client
  */
 export async function getDsarRequests(
+  client: SupabaseClient,
   userId: string
 ): Promise<Record<string, unknown>[]> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from('dsar_requests')
     .select('*')
     .eq('user_id', userId)
@@ -120,7 +133,7 @@ export async function getDsarRequests(
 }
 
 /**
- * Update DSAR request status (admin operation).
+ * Update DSAR request status (admin operation — uses service-role client).
  */
 export async function updateDsarStatus(
   requestId: string,

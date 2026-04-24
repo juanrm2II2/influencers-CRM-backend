@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabase } from '../services/supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { scrapeProfile } from '../services/scrapeCreators';
 import { logger } from '../logger';
 import {
@@ -25,12 +25,30 @@ function handleError(res: Response, err: unknown, context: string): void {
   res.status(500).json({ error: 'Internal server error' });
 }
 
+/**
+ * Resolve the per-request RLS-scoped Supabase client attached by the
+ * `authenticate` middleware.  Returns `null` and writes a 401 when missing
+ * (defence in depth — this should never happen on protected routes).
+ */
+function getScoped(req: { scopedClient?: SupabaseClient; user?: { sub: string } }, res: Response): SupabaseClient | null {
+  const client = req.scopedClient;
+  const userId = req.user?.sub;
+  if (!client || !userId) {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  return client;
+}
+
 // POST /api/influencers/search
 export async function searchInfluencer(
   req: Request<object, object, SearchRequestBody>,
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
+    const userId = req.user!.sub;
     const { handle, platform } = req.body;
 
     if (!handle || !platform) {
@@ -43,16 +61,16 @@ export async function searchInfluencer(
     // Encrypt PII fields before persisting
     const enc = getFieldEncryptionService();
     const encryptedProfile = await enc.encryptFields(
-      { ...profileData },
+      { ...profileData, user_id: userId },
       INFLUENCER_PII_FIELDS,
     );
 
-    // Upsert by handle + platform to avoid duplicates across platforms
+    // Upsert by handle + platform + user_id (RLS-scoped tenant isolation)
     const { data, error } = await supabase
       .from('influencers')
       .upsert(
         encryptedProfile,
-        { onConflict: 'handle,platform', ignoreDuplicates: false }
+        { onConflict: 'handle,platform,user_id', ignoreDuplicates: false }
       )
       .select()
       .single();
@@ -77,6 +95,8 @@ export async function getInfluencers(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
     const { platform, status, niche, min_followers, page: pageStr, limit: limitStr } = req.query;
 
     // Pagination
@@ -145,6 +165,8 @@ export async function getInfluencerById(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
     const { id } = req.params;
 
     const { data: influencer, error: influencerError } = await supabase
@@ -185,6 +207,8 @@ export async function updateInfluencer(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
     const { id } = req.params;
     const { status, niche, notes } = req.body;
 
@@ -231,6 +255,8 @@ export async function deleteInfluencer(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
     const { id } = req.params;
 
     const { data, error } = await supabase
@@ -262,6 +288,9 @@ export async function createOutreach(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
+    const userId = req.user!.sub;
     const { id } = req.params;
     const { contact_date, channel, message_sent, response, follow_up_date } =
       req.body;
@@ -270,6 +299,7 @@ export async function createOutreach(
       .from('outreach')
       .insert({
         influencer_id: id,
+        user_id: userId,
         contact_date: contact_date ?? null,
         channel: channel ?? null,
         message_sent: message_sent ?? null,
@@ -302,6 +332,9 @@ export async function bulkSearchInfluencers(
   res: Response
 ): Promise<void> {
   try {
+    const supabase = getScoped(req, res);
+    if (!supabase) return;
+    const userId = req.user!.sub;
     const { handles, platform } = req.body;
 
     if (!handles || !Array.isArray(handles) || handles.length === 0 || !platform) {
@@ -313,13 +346,20 @@ export async function bulkSearchInfluencers(
 
     const enc = getFieldEncryptionService();
 
-    for (const handle of handles) {
+    // Cap outbound concurrency to avoid amplifying paid-API quota usage
+    // and to give upstream rate-limits time to apply (M1).
+    const concurrency = Math.min(
+      Math.max(1, parseInt(process.env.BULK_SEARCH_CONCURRENCY ?? '3', 10) || 3),
+      10,
+    );
+
+    const tasks = handles.map((handle, idx) => async () => {
       try {
         const profileData = await scrapeProfile(handle, platform);
 
-        // Encrypt PII fields before persisting
+        // Encrypt PII fields and stamp owner before persisting
         const encryptedProfile = await enc.encryptFields(
-          { ...profileData },
+          { ...profileData, user_id: userId },
           INFLUENCER_PII_FIELDS,
         );
 
@@ -327,29 +367,41 @@ export async function bulkSearchInfluencers(
           .from('influencers')
           .upsert(
             encryptedProfile,
-            { onConflict: 'handle,platform', ignoreDuplicates: false }
+            { onConflict: 'handle,platform,user_id', ignoreDuplicates: false }
           )
           .select()
           .single();
 
         if (error) {
           logger.error({ handle, err: error.message }, 'bulkSearchInfluencers supabase error');
-          results.push({ handle, success: false, error: 'Failed to save profile' });
+          results[idx] = { handle, success: false, error: 'Failed to save profile' };
         } else {
-          // Decrypt PII fields before returning to client
           const decrypted = await enc.decryptFields(data, INFLUENCER_PII_FIELDS);
-          results.push({ handle, success: true, data: decrypted });
+          results[idx] = { handle, success: true, data: decrypted };
         }
       } catch (err: unknown) {
-        logger.error({ handle, err: err instanceof Error ? err.message : err }, 'bulkSearchInfluencers error');
-        results.push({ handle, success: false, error: 'Failed to process handle' });
+        logger.error(
+          { handle, err: err instanceof Error ? err.message : 'unknown' },
+          'bulkSearchInfluencers error',
+        );
+        results[idx] = { handle, success: false, error: 'Failed to process handle' };
+      }
+    });
+
+    // Simple promise pool
+    let cursor = 0;
+    async function worker(): Promise<void> {
+      while (cursor < tasks.length) {
+        const i = cursor++;
+        await tasks[i]();
       }
     }
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
     const summary = {
       total: handles.length,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
+      succeeded: results.filter((r) => r && r.success).length,
+      failed: results.filter((r) => r && !r.success).length,
       results,
     };
 

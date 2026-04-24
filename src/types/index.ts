@@ -9,6 +9,7 @@ export type OutreachChannel = 'email' | 'dm' | 'telegram';
 
 export interface Influencer {
   id: string;
+  user_id: string;
   handle: string;
   platform: Platform;
   full_name: string | null;
@@ -29,6 +30,7 @@ export interface Influencer {
 
 export interface Outreach {
   id: string;
+  user_id: string;
   influencer_id: string;
   contact_date: string | null;
   channel: OutreachChannel | null;
