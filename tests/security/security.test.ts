@@ -42,6 +42,7 @@ setupChain();
 
 jest.mock('../../src/services/supabase', () => ({
   supabase: { from: mockFrom },
+  createScopedClient: jest.fn(() => ({ from: mockFrom })),
 }));
 
 jest.mock('../../src/services/scrapeCreators', () => ({

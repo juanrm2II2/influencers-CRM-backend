@@ -20,7 +20,7 @@ jest.mock('axios', () => ({
   })),
 }));
 
-import { scrapeProfile } from '../../../src/services/scrapeCreators';
+import { scrapeProfile, _clearScraperCache } from '../../../src/services/scrapeCreators';
 
 jest.mock('../../../src/logger', () => ({
   logger: {
@@ -34,6 +34,9 @@ jest.mock('../../../src/logger', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Reset the scraper cache (audit M1) so tests do not leak hits across
+  // each other when reusing the same handle/platform tuple.
+  _clearScraperCache();
 });
 
 describe('scrapeProfile', () => {

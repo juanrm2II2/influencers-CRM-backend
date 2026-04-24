@@ -6,6 +6,7 @@ import { logger } from './logger';
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
+  'SUPABASE_ANON_KEY',
   'SCRAPECREATORS_API_KEY',
 ] as const;
 
@@ -31,6 +32,12 @@ const PROVIDER_REQUIRED_VARS: Record<string, readonly string[]> = {
  *
  * Provider-specific vars are checked based on the `KEY_PROVIDER` env var
  * (defaults to `'env'`).
+ *
+ * In `NODE_ENV=production`, the symmetric `env` provider is rejected
+ * unless `ALLOW_INSECURE_KEY_PROVIDER=true` is explicitly set, because a
+ * leaked `SUPABASE_JWT_SECRET` lets an attacker forge `role=admin` tokens
+ * (audit M10).  Production deployments must use an asymmetric provider
+ * (`jwks` / `rs256-pem`) or one of the KMS-backed symmetric providers.
  */
 export function validateEnv(): void {
   const missing = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
@@ -40,6 +47,21 @@ export function validateEnv(): void {
 
   if (!providerVars) {
     const message = `Unknown KEY_PROVIDER "${provider}". Supported: ${Object.keys(PROVIDER_REQUIRED_VARS).join(', ')}`;
+    logger.fatal(message);
+    throw new Error(message);
+  }
+
+  // Refuse to boot the symmetric `env` provider in production unless the
+  // operator explicitly opts in (audit M10).
+  if (
+    process.env.NODE_ENV === 'production' &&
+    provider === 'env' &&
+    process.env.ALLOW_INSECURE_KEY_PROVIDER !== 'true'
+  ) {
+    const message =
+      'KEY_PROVIDER=env (HS256 shared secret) is not permitted in production. ' +
+      'Use jwks, rs256-pem, aws-kms, or aws-secrets-manager.  Override with ' +
+      'ALLOW_INSECURE_KEY_PROVIDER=true only for emergency rollbacks.';
     logger.fatal(message);
     throw new Error(message);
   }

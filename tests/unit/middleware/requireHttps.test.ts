@@ -110,10 +110,14 @@ describe('requireHttps middleware', () => {
       expect(res.redirect).not.toHaveBeenCalled();
     });
 
-    it('should respect x-forwarded-proto: https header', () => {
+    it('should respect req.secure when fronted by a trusted proxy', () => {
+      // With `app.set('trust proxy', …)` configured, Express sets
+      // `req.secure = true` when X-Forwarded-Proto: https is observed.
+      // The middleware now consumes `req.secure` rather than reading the
+      // header directly, so untrusted proxies cannot bypass the redirect.
       const req = createMockReq({
-        protocol: 'http', // underlying protocol is HTTP (behind LB)
-        headers: { 'x-forwarded-proto': 'https' } as Record<string, string>,
+        protocol: 'http',
+        secure: true,
       });
       const res = createMockRes();
       const next = jest.fn();
@@ -124,10 +128,14 @@ describe('requireHttps middleware', () => {
       expect(res.redirect).not.toHaveBeenCalled();
     });
 
-    it('should redirect when x-forwarded-proto is http', () => {
+    it('should redirect when req.secure is false even if X-Forwarded-Proto is https', () => {
+      // When `trust proxy` is not configured, Express ignores the
+      // X-Forwarded-Proto header — the middleware must redirect rather
+      // than trust an untrusted upstream's claim of HTTPS.
       const req = createMockReq({
         protocol: 'http',
-        headers: { 'x-forwarded-proto': 'http' } as Record<string, string>,
+        secure: false,
+        headers: { 'x-forwarded-proto': 'https' } as Record<string, string>,
       });
       const res = createMockRes();
       const next = jest.fn();

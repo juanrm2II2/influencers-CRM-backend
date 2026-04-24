@@ -32,6 +32,7 @@ jest.mock('../../src/services/supabase', () => ({
     from: mockFrom,
     auth: { admin: { signOut: mockAdminSignOut } },
   },
+  createScopedClient: jest.fn(() => ({ from: mockFrom })),
 }));
 
 jest.mock('../../src/logger', () => ({

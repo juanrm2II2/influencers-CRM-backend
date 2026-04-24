@@ -7,6 +7,7 @@ import jwt, {
 } from 'jsonwebtoken';
 import { tokenBlocklist } from '../services/tokenBlocklist';
 import { getJwtVerificationKey, getJwtAlgorithms } from '../services/keyProvider';
+import { createScopedClient } from '../services/supabase';
 
 /**
  * Matches a well-formed `Authorization: Bearer <token>` header value in a
@@ -93,5 +94,13 @@ export async function authenticate(
   }
 
   req.user = decoded;
+  req.accessToken = token;
+  try {
+    req.scopedClient = createScopedClient(token);
+  } catch {
+    // createScopedClient only throws on misconfiguration; surface as 500.
+    res.status(500).json({ error: 'Authentication is not configured' });
+    return;
+  }
   next();
 }

@@ -22,10 +22,12 @@ export function requireHttps(
     return;
   }
 
-  const proto =
-    (req.headers['x-forwarded-proto'] as string | undefined) ?? req.protocol;
-
-  if (proto === 'https') {
+  // `req.secure` reads the protocol via Express's trust-proxy-aware logic
+  // (`app.set('trust proxy', …)` is configured in createApp).  Falling back
+  // to `req.protocol === 'https'` covers test stubs that don't populate
+  // `secure`, but the X-Forwarded-Proto header is no longer trusted
+  // unconditionally (M4).
+  if (req.secure || req.protocol === 'https') {
     next();
     return;
   }

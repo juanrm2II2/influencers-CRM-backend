@@ -39,6 +39,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
           SUPABASE_JWT_SECRET: ${{ secrets.TEST_SUPABASE_JWT_SECRET }}
           SCRAPECREATORS_API_KEY: ${{ secrets.TEST_SCRAPECREATORS_API_KEY }}
           CORS_ALLOWED_ORIGINS: http://localhost:3000
@@ -72,6 +73,9 @@ jobs:
 
       - name: Run npm audit
         run: npm audit --audit-level=high
+
+      - name: Verify npm package signatures
+        run: npm audit signatures
 
       - name: Check for outdated dependencies
         run: npm outdated || true

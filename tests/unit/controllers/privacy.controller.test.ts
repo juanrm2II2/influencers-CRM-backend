@@ -53,6 +53,10 @@ describe('privacy controller', () => {
       body: {},
       params: {},
       ip: '127.0.0.1',
+      // The controller now reads its DB client from req.scopedClient
+      // (audit H1).  A truthy stand-in is enough — the actual DB calls
+      // happen inside the mocked privacy service.
+      scopedClient: {} as unknown as Request['scopedClient'],
     };
     mockRes = {
       json: jest.fn().mockReturnThis(),
@@ -72,7 +76,7 @@ describe('privacy controller', () => {
 
       await listConsents(mockReq as Request, mockRes as Response);
 
-      expect(mockGetConsents).toHaveBeenCalledWith('user-1');
+      expect(mockGetConsents).toHaveBeenCalledWith(mockReq.scopedClient, 'user-1');
       expect(mockRes.json).toHaveBeenCalledWith({ data: consents });
     });
 
@@ -93,7 +97,7 @@ describe('privacy controller', () => {
 
       await updateConsent(mockReq as Request, mockRes as Response);
 
-      expect(mockUpsertConsent).toHaveBeenCalledWith('user-1', 'marketing', true, '127.0.0.1');
+      expect(mockUpsertConsent).toHaveBeenCalledWith(mockReq.scopedClient, 'user-1', 'marketing', true, '127.0.0.1');
       expect(mockRes.status).toHaveBeenCalledWith(200);
       expect(mockRes.json).toHaveBeenCalledWith(result);
     });
@@ -118,7 +122,7 @@ describe('privacy controller', () => {
 
       await listDsarRequests(mockReq as Request, mockRes as Response);
 
-      expect(mockGetDsarRequests).toHaveBeenCalledWith('user-1');
+      expect(mockGetDsarRequests).toHaveBeenCalledWith(mockReq.scopedClient, 'user-1');
       expect(mockRes.json).toHaveBeenCalledWith({ data: requests });
     });
   });
@@ -131,7 +135,7 @@ describe('privacy controller', () => {
 
       await createDsar(mockReq as Request, mockRes as Response);
 
-      expect(mockCreateDsarRequest).toHaveBeenCalledWith('user-1', 'test@test.com', 'access');
+      expect(mockCreateDsarRequest).toHaveBeenCalledWith(mockReq.scopedClient, 'user-1', 'test@test.com', 'access');
       expect(mockRes.status).toHaveBeenCalledWith(201);
     });
 
