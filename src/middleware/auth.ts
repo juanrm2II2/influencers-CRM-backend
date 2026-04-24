@@ -1,18 +1,36 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, {
+  JwtPayload,
+  Algorithm,
+  Secret,
+  GetPublicKeyOrSecret,
+} from 'jsonwebtoken';
 import { tokenBlocklist } from '../services/tokenBlocklist';
-import { getJwtSecret } from '../services/keyProvider';
+import { getJwtVerificationKey, getJwtAlgorithms } from '../services/keyProvider';
+
+/**
+ * Matches a well-formed `Authorization: Bearer <token>` header value in a
+ * case-insensitive manner (RFC 6750 §2.1 treats the scheme name as
+ * case-insensitive).  The token itself must be non-empty.
+ */
+const BEARER_RE = /^Bearer[ \t]+(\S.*)$/i;
 
 /**
  * Middleware that validates a Supabase-issued JWT from the Authorization header.
  *
- * Expects: `Authorization: Bearer <token>`
+ * Expects: `Authorization: Bearer <token>` (scheme match is case-insensitive).
  *
- * On success the decoded payload is attached to `req.user`.
- * Also checks the persistent token blocklist for revoked tokens.
+ * On success the decoded payload is attached to `req.user`.  Also checks the
+ * persistent token blocklist for revoked tokens.
  *
- * The signing secret is obtained from the configured key provider
- * (env var, AWS KMS, AWS Secrets Manager, …) via {@link getJwtSecret}.
+ * A `jti` (JWT ID) claim is **required** — tokens without one are rejected.
+ * This prevents the raw-token fallback that previously allowed an opaque
+ * token string to be used as its own blocklist key (which leaks tokens into
+ * persistent storage).
+ *
+ * The verification key and allowed algorithms are obtained from the
+ * configured key provider (HS256 env/KMS/Secrets Manager, RS256 PEM, or
+ * RS256 JWKS) via {@link getJwtVerificationKey} and {@link getJwtAlgorithms}.
  */
 export async function authenticate(
   req: Request,
@@ -21,36 +39,59 @@ export async function authenticate(
 ): Promise<void> {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const match = authHeader ? BEARER_RE.exec(authHeader) : null;
+  if (!match) {
     res.status(401).json({ error: 'Missing or malformed Authorization header' });
     return;
   }
+  const token = match[1].trim();
 
-  const token = authHeader.slice(7); // strip "Bearer "
-
-  let secret: string;
+  let algorithms: Algorithm[];
+  let verificationKey: Secret | GetPublicKeyOrSecret;
   try {
-    secret = await getJwtSecret();
+    algorithms = getJwtAlgorithms();
+    verificationKey = await getJwtVerificationKey();
   } catch {
     res.status(500).json({ error: 'Authentication is not configured' });
     return;
   }
 
+  let decoded: JwtPayload & { sub: string; email?: string; role?: string; jti?: string };
   try {
-    const decoded = jwt.verify(token, secret, {
-      algorithms: ['HS256'],
-    }) as JwtPayload & { sub: string; email?: string; role?: string; jti?: string };
+    decoded = await new Promise((resolve, reject) => {
+      jwt.verify(
+        token,
+        verificationKey as Secret,
+        { algorithms },
+        (err, payload) => {
+          if (err) return reject(err);
+          resolve(payload as typeof decoded);
+        }
+      );
+    });
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
 
-    // Check persistent token blocklist for revoked tokens
-    const tokenId = decoded.jti ?? token;
-    if (await tokenBlocklist.isRevoked(tokenId)) {
+  // Enforce jti presence — no raw-token fallback.
+  if (!decoded.jti || typeof decoded.jti !== 'string') {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return;
+  }
+
+  try {
+    if (await tokenBlocklist.isRevoked(decoded.jti)) {
       res.status(401).json({ error: 'Token has been revoked' });
       return;
     }
-
-    req.user = decoded;
-    next();
   } catch {
+    // tokenBlocklist already fails closed internally; a thrown error here
+    // means unexpected corruption — reject to be safe.
     res.status(401).json({ error: 'Invalid or expired token' });
+    return;
   }
+
+  req.user = decoded;
+  next();
 }

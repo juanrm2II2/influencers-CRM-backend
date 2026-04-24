@@ -1,10 +1,11 @@
 /**
  * JWT Key Provider – HSM / KMS integration layer.
  *
- * This module abstracts how the JWT signing secret is obtained so that
- * production deployments can use a Hardware Security Module (HSM) or a
- * cloud Key Management Service (KMS) instead of a plain environment
- * variable.
+ * This module abstracts how the JWT signing secret (symmetric) or public
+ * key (asymmetric) is obtained so that production deployments can use a
+ * Hardware Security Module (HSM) or a cloud Key Management Service (KMS)
+ * instead of a plain environment variable — and so that the Supabase
+ * project's JWT verification key can be rotated asymmetrically via JWKS.
  *
  * Supported providers (selected via the `KEY_PROVIDER` env var):
  *
@@ -13,15 +14,19 @@
  *   | Environment variable  | `env` *(default)*       | `SUPABASE_JWT_SECRET`                      |
  *   | AWS KMS (envelope)    | `aws-kms`               | `KMS_KEY_ID`, `KMS_ENCRYPTED_SECRET`       |
  *   | AWS Secrets Manager   | `aws-secrets-manager`   | `AWS_SECRET_ARN`                           |
+ *   | RS256 PEM             | `rs256-pem`             | `JWT_PUBLIC_KEY_PEM`                       |
+ *   | RS256 JWKS            | `jwks`                  | `JWT_JWKS_URI`                             |
  *
  * The active provider is initialised once at startup via
  * `initializeKeyProvider()`.  The cached secret is refreshed
  * periodically (default: 1 h) for KMS-backed providers so that key
- * rotation is picked up automatically.
+ * rotation is picked up automatically.  JWKS-backed providers delegate
+ * caching and rotation to `jwks-rsa`.
  *
  * @module keyProvider
  */
 
+import type { Algorithm, Secret, GetPublicKeyOrSecret } from 'jsonwebtoken';
 import { logger } from '../logger';
 
 // ---------------------------------------------------------------------------
@@ -38,8 +43,25 @@ export interface JwtKeyProvider {
   /** One-time async initialisation (fetch initial secret, etc.). */
   initialize(): Promise<void>;
 
-  /** Return the current JWT signing secret (may be cached). */
+  /** Return the current JWT signing secret (symmetric providers only). */
   getSecret(): Promise<string>;
+
+  /**
+   * Return the verification key or a key-resolver callback suitable for
+   * `jsonwebtoken`'s `verify()`.  Asymmetric providers override this to
+   * return the public key (PEM) or a JWKS-backed callback.
+   *
+   * The default implementation delegates to `getSecret()` so existing
+   * symmetric providers do not have to implement it.
+   */
+  getVerificationKey?(): Promise<Secret | GetPublicKeyOrSecret>;
+
+  /**
+   * Algorithms the provider is configured to verify.  Pinning this list
+   * per-provider prevents algorithm-confusion attacks (e.g. an RS256
+   * public key being accepted as an HS256 shared secret).
+   */
+  getAlgorithms(): Algorithm[];
 
   /** Release background resources (timers, connections). */
   destroy(): void;
@@ -68,6 +90,10 @@ export class EnvKeyProvider implements JwtKeyProvider {
       throw new Error('Key provider not initialized');
     }
     return this.secret;
+  }
+
+  getAlgorithms(): Algorithm[] {
+    return ['HS256'];
   }
 
   destroy(): void {
@@ -154,6 +180,10 @@ export class AwsKmsKeyProvider implements JwtKeyProvider {
       throw new Error('Key provider not initialized');
     }
     return this.secret;
+  }
+
+  getAlgorithms(): Algorithm[] {
+    return ['HS256'];
   }
 
   destroy(): void {
@@ -257,6 +287,10 @@ export class AwsSecretsManagerKeyProvider implements JwtKeyProvider {
     return this.secret;
   }
 
+  getAlgorithms(): Algorithm[] {
+    return ['HS256'];
+  }
+
   destroy(): void {
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
@@ -302,11 +336,161 @@ export class AwsSecretsManagerKeyProvider implements JwtKeyProvider {
 }
 
 // ---------------------------------------------------------------------------
+// RsaPemKeyProvider – asymmetric RS256 with a static PEM public key
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies JWTs using an RSA public key supplied as PEM text.
+ *
+ * Required env vars:
+ *   - `JWT_PUBLIC_KEY_PEM` – The PEM-encoded RSA public key.  Newlines may
+ *     be encoded as literal `\n` (they will be decoded at load time), so the
+ *     key can be stored on a single line in `.env` files or secret stores.
+ *
+ * This provider only supports **verification** — it cannot sign tokens and
+ * therefore throws from `getSecret()`.  Algorithms are pinned to `RS256`.
+ */
+export class RsaPemKeyProvider implements JwtKeyProvider {
+  readonly name = 'rs256-pem';
+
+  private publicKey: string | null = null;
+
+  async initialize(): Promise<void> {
+    const raw = process.env.JWT_PUBLIC_KEY_PEM;
+    if (!raw) {
+      throw new Error(
+        'Missing required env var for rs256-pem provider: JWT_PUBLIC_KEY_PEM',
+      );
+    }
+    // Support both literal newlines and escaped "\n" sequences.
+    const pem = raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw;
+    if (!/-----BEGIN [A-Z ]*PUBLIC KEY-----/.test(pem)) {
+      throw new Error('JWT_PUBLIC_KEY_PEM does not look like a PEM public key');
+    }
+    this.publicKey = pem;
+    logger.info({ provider: this.name }, 'JWT key provider initialized');
+  }
+
+  async getSecret(): Promise<string> {
+    throw new Error(
+      'rs256-pem provider does not expose a signing secret (asymmetric, verify-only)',
+    );
+  }
+
+  async getVerificationKey(): Promise<Secret> {
+    if (!this.publicKey) {
+      throw new Error('Key provider not initialized');
+    }
+    return this.publicKey;
+  }
+
+  getAlgorithms(): Algorithm[] {
+    return ['RS256'];
+  }
+
+  destroy(): void {
+    /* nothing to clean up */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// JwksKeyProvider – asymmetric RS256 with a remote JWKS endpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies JWTs using a JWKS endpoint (e.g. the one Supabase exposes once a
+ * project is migrated to asymmetric JWT signing).
+ *
+ * Required env vars:
+ *   - `JWT_JWKS_URI` – URL to a standards-compliant JWKS document.
+ *
+ * The provider returns a `GetPublicKeyOrSecret` callback compatible with
+ * `jsonwebtoken.verify()` that looks up the signing key by the JWT's `kid`
+ * header.  Key caching, rate-limiting and rotation are delegated to the
+ * `jwks-rsa` library.
+ *
+ * Algorithms are pinned to `RS256` to prevent algorithm-confusion attacks.
+ */
+export class JwksKeyProvider implements JwtKeyProvider {
+  readonly name = 'jwks';
+
+  private client: {
+    getSigningKey: (kid: string) => Promise<{ getPublicKey: () => string }>;
+  } | null = null;
+  private readonly jwksUri: string;
+
+  constructor() {
+    const uri = process.env.JWT_JWKS_URI;
+    if (!uri) {
+      throw new Error(
+        'Missing required env var for jwks provider: JWT_JWKS_URI',
+      );
+    }
+    this.jwksUri = uri;
+  }
+
+  async initialize(): Promise<void> {
+    // Dynamic import keeps `jwks-rsa` optional for projects on HS256.
+    const jwksRsa = await import('jwks-rsa');
+    const factory =
+      (jwksRsa as unknown as { default?: typeof jwksRsa }).default ?? jwksRsa;
+    this.client = (factory as unknown as (o: unknown) => typeof this.client)({
+      jwksUri: this.jwksUri,
+      cache: true,
+      cacheMaxEntries: 10,
+      cacheMaxAge: 10 * 60 * 1000, // 10 min
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    });
+    logger.info(
+      { provider: this.name, jwksUri: this.jwksUri },
+      'JWT key provider initialized',
+    );
+  }
+
+  async getSecret(): Promise<string> {
+    throw new Error(
+      'jwks provider does not expose a signing secret (asymmetric, verify-only)',
+    );
+  }
+
+  async getVerificationKey(): Promise<GetPublicKeyOrSecret> {
+    if (!this.client) {
+      throw new Error('Key provider not initialized');
+    }
+    const client = this.client;
+    return (header, callback) => {
+      if (!header.kid) {
+        callback(new Error('JWT header is missing "kid"'));
+        return;
+      }
+      client
+        .getSigningKey(header.kid)
+        .then((key) => callback(null, key.getPublicKey()))
+        .catch((err) => callback(err as Error));
+    };
+  }
+
+  getAlgorithms(): Algorithm[] {
+    return ['RS256'];
+  }
+
+  destroy(): void {
+    this.client = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Factory & singleton
 // ---------------------------------------------------------------------------
 
 /** Names recognised by `createKeyProvider()`. */
-export type KeyProviderName = 'env' | 'aws-kms' | 'aws-secrets-manager';
+export type KeyProviderName =
+  | 'env'
+  | 'aws-kms'
+  | 'aws-secrets-manager'
+  | 'rs256-pem'
+  | 'jwks';
 
 /**
  * Instantiate (but do **not** initialise) a key provider.
@@ -325,6 +509,10 @@ export function createKeyProvider(name?: KeyProviderName): JwtKeyProvider {
       return new AwsKmsKeyProvider();
     case 'aws-secrets-manager':
       return new AwsSecretsManagerKeyProvider();
+    case 'rs256-pem':
+      return new RsaPemKeyProvider();
+    case 'jwks':
+      return new JwksKeyProvider();
     default:
       throw new Error(`Unknown key provider: ${resolved as string}`);
   }
@@ -354,6 +542,8 @@ export async function initializeKeyProvider(
  *
  * If no provider has been explicitly initialised (e.g. in unit tests) the
  * function transparently falls back to `EnvKeyProvider`.
+ *
+ * Throws for asymmetric (verify-only) providers.
  */
 export async function getJwtSecret(): Promise<string> {
   if (!_provider) {
@@ -361,6 +551,38 @@ export async function getJwtSecret(): Promise<string> {
     await _provider.initialize();
   }
   return _provider.getSecret();
+}
+
+/**
+ * Return the key or key-resolver callback used to *verify* JWTs.
+ *
+ * For symmetric providers (`env`, `aws-kms`, `aws-secrets-manager`) this is
+ * the shared secret.  For asymmetric providers this is either the public
+ * key PEM (`rs256-pem`) or a callback that resolves the signing key from a
+ * JWKS document (`jwks`).
+ */
+export async function getJwtVerificationKey(): Promise<
+  Secret | GetPublicKeyOrSecret
+> {
+  if (!_provider) {
+    _provider = new EnvKeyProvider();
+    await _provider.initialize();
+  }
+  if (_provider.getVerificationKey) {
+    return _provider.getVerificationKey();
+  }
+  return _provider.getSecret();
+}
+
+/**
+ * Return the list of algorithms accepted for verification.  Pinned
+ * per-provider to prevent algorithm-confusion attacks.
+ */
+export function getJwtAlgorithms(): Algorithm[] {
+  if (!_provider) {
+    return ['HS256'];
+  }
+  return _provider.getAlgorithms();
 }
 
 /** Expose the active provider for monitoring / testing. */

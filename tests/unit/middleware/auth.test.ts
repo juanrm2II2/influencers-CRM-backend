@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { authenticate } from '../../../src/middleware/auth';
 
 // Mock the tokenBlocklist service to avoid real Supabase calls
@@ -81,7 +82,7 @@ describe('authenticate middleware', () => {
     const expiredToken = jwt.sign(
       { sub: 'user-123', email: 'test@test.com', role: 'user' },
       JWT_SECRET,
-      { algorithm: 'HS256', expiresIn: '-1s' }
+      { algorithm: 'HS256', expiresIn: '-1s', jwtid: crypto.randomUUID() }
     );
     const req = mockReq(`Bearer ${expiredToken}`) as Request;
     const res = mockRes() as Response;
@@ -99,7 +100,7 @@ describe('authenticate middleware', () => {
     const wrongToken = jwt.sign(
       { sub: 'user-123', email: 'test@test.com', role: 'user' },
       'wrong-secret',
-      { algorithm: 'HS256' }
+      { algorithm: 'HS256', jwtid: crypto.randomUUID() }
     );
     const req = mockReq(`Bearer ${wrongToken}`) as Request;
     const res = mockRes() as Response;
@@ -115,7 +116,10 @@ describe('authenticate middleware', () => {
 
   it('should call next() and set req.user when token is valid', async () => {
     const payload = { sub: 'user-123', email: 'test@test.com', role: 'user' };
-    const validToken = jwt.sign(payload, JWT_SECRET, { algorithm: 'HS256' });
+    const validToken = jwt.sign(payload, JWT_SECRET, {
+      algorithm: 'HS256',
+      jwtid: crypto.randomUUID(),
+    });
     const req = mockReq(`Bearer ${validToken}`) as Request;
     const res = mockRes() as Response;
 
@@ -133,7 +137,7 @@ describe('authenticate middleware', () => {
     const wrongAlgoToken = jwt.sign(
       { sub: 'user-123' },
       JWT_SECRET,
-      { algorithm: 'HS384' }
+      { algorithm: 'HS384', jwtid: crypto.randomUUID() }
     );
     const req = mockReq(`Bearer ${wrongAlgoToken}`) as Request;
     const res = mockRes() as Response;
@@ -158,7 +162,10 @@ describe('authenticate middleware', () => {
     (tokenBlocklist.isRevoked as jest.Mock).mockResolvedValue(true);
 
     const payload = { sub: 'user-123', email: 'test@test.com', role: 'user' };
-    const validToken = jwt.sign(payload, JWT_SECRET, { algorithm: 'HS256' });
+    const validToken = jwt.sign(payload, JWT_SECRET, {
+      algorithm: 'HS256',
+      jwtid: crypto.randomUUID(),
+    });
     const req = mockReq(`Bearer ${validToken}`) as Request;
     const res = mockRes() as Response;
 
@@ -180,5 +187,38 @@ describe('authenticate middleware', () => {
 
     expect(tokenBlocklist.isRevoked).toHaveBeenCalledWith('unique-jti-id');
     expect(next).toHaveBeenCalled();
+  });
+
+  it('should return 401 when the token is missing a jti claim', async () => {
+    // No jti, no jwtid option — the raw-token fallback is no longer allowed.
+    const payload = { sub: 'user-123', email: 'test@test.com', role: 'user' };
+    const tokenNoJti = jwt.sign(payload, JWT_SECRET, { algorithm: 'HS256' });
+    const req = mockReq(`Bearer ${tokenNoJti}`) as Request;
+    const res = mockRes() as Response;
+
+    await authenticate(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Invalid or expired token',
+    });
+    expect(tokenBlocklist.isRevoked).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('should accept the Bearer scheme case-insensitively', async () => {
+    const payload = { sub: 'user-123', email: 'test@test.com', role: 'user' };
+    const validToken = jwt.sign(payload, JWT_SECRET, {
+      algorithm: 'HS256',
+      jwtid: crypto.randomUUID(),
+    });
+
+    for (const scheme of ['bearer', 'BEARER', 'BeArEr']) {
+      const req = mockReq(`${scheme} ${validToken}`) as Request;
+      const res = mockRes() as Response;
+      next = jest.fn();
+      await authenticate(req, res, next);
+      expect(next).toHaveBeenCalled();
+    }
   });
 });

@@ -20,6 +20,8 @@ const PROVIDER_REQUIRED_VARS: Record<string, readonly string[]> = {
   env: ['SUPABASE_JWT_SECRET'],
   'aws-kms': ['KMS_KEY_ID', 'KMS_ENCRYPTED_SECRET'],
   'aws-secrets-manager': ['AWS_SECRET_ARN'],
+  'rs256-pem': ['JWT_PUBLIC_KEY_PEM'],
+  jwks: ['JWT_JWKS_URI'],
 };
 
 /**
