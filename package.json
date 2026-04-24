@@ -23,12 +23,12 @@
   },
   "homepage": "https://github.com/juanrm2II2/influencers-CRM-backend#readme",
   "dependencies": {
-    "@supabase/supabase-js": "^2.101.1",
+    "@supabase/supabase-js": "^2.104.1",
     "axios": "^1.15.2",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.3.2",
+    "express-rate-limit": "^8.4.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "lru-cache": "^11.3.5",
@@ -37,13 +37,13 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@aws-sdk/client-kms": "^3.1036.0",
-    "@aws-sdk/client-secrets-manager": "^3.1036.0",
+    "@aws-sdk/client-kms": "^3.1037.0",
+    "@aws-sdk/client-secrets-manager": "^3.1037.0",
     "jwks-rsa": "^4.0.1"
   },
   "devDependencies": {
-    "@aws-sdk/client-kms": "^3.1036.0",
-    "@aws-sdk/client-secrets-manager": "^3.1036.0",
+    "@aws-sdk/client-kms": "^3.1037.0",
+    "@aws-sdk/client-secrets-manager": "^3.1037.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
