@@ -56,13 +56,13 @@ describe('logger redaction (audit M9)', () => {
 
     const flush = () => new Promise((r) => setImmediate(r));
 
-  it('redacts top-level connection strings', () => {
+  it('redacts top-level connection strings', async () => {
     logger.error({ DATABASE_URL: 'postgres://user:secret@host/db' }, 'oops');
     expect(written).toContain('[REDACTED]');
     expect(written).not.toContain('postgres://user:secret@host/db');
   });
 
-  it('strips AxiosError config / request / response.headers via the err serializer', () => {
+  it('strips AxiosError config / request / response.headers via the err serializer', async () => {
     const err = Object.assign(new Error('boom'), {
       name: 'AxiosError',
       code: 'ETIMEDOUT',
@@ -75,7 +75,7 @@ describe('logger redaction (audit M9)', () => {
       },
     });
     logger.error({ err }, 'upstream error');
-    await flush();
+    async flush();
     expect(written).toContain('boom');
     expect(written).toContain('AxiosError');
     expect(written).toContain('502');
