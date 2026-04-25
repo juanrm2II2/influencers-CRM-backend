@@ -28,29 +28,29 @@ describe('logger redaction (audit M9)', () => {
   });
 
   beforeEach(() => {
-    written = '';
+  written = '';
 
-    const stream = new PassThrough();
-    stream.on('data', (d) => (written += d.toString()));
+  const stream = new PassThrough();
+  stream.on('data', (d) => (written += d.toString()));
 
-    logger = pino(
-      {
-        level: 'debug',
-        redact: {
-          paths: [
-            'DATABASE_URL',
-            'err.config',
-            'err.request',
-            'err.response.headers'
-          ],
-          censor: '[REDACTED]'
-        },
-        serializers: {
-          err: pino.stdSerializers.err
-        }
+  logger = pino(
+    {
+      level: 'debug',
+      redact: {
+        paths: [
+          'DATABASE_URL',
+          'err.config',
+          'err.request',
+          'err.response.headers'
+        ],
+        censor: '[REDACTED]'
       },
-      stream
-    });
+      serializers: {
+        err: pino.stdSerializers.err
+      }
+    },
+    stream
+  });
 
 
     const flush = () => new Promise((r) => setImmediate(r));
