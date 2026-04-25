@@ -264,7 +264,14 @@ Legal / compliance documents live in [`docs/`](./docs):
 - [`DATA_PROCESSING_AGREEMENT.md`](./docs/DATA_PROCESSING_AGREEMENT.md)
 
 Security audit artifacts are checked in at the repo root
-(`AUDIT_REPORT.pdf`, `WHITE_PAPER.pdf`).
+(`AUDIT_REPORT.pdf`, `WHITE_PAPER.pdf`,
+[`SECURITY_AUDIT_CHECKLIST.md`](./SECURITY_AUDIT_CHECKLIST.md)).
+The Pre-ICO readiness score (`100 − 12·H − 4·M − 1·L`) is recomputed in
+CI on every push by [`.github/workflows/readiness.yml`](./.github/workflows/readiness.yml)
+via [`scripts/compute-readiness.js`](./scripts/compute-readiness.js).
+The PDFs themselves are regenerated from the checklist with
+[`scripts/generate_pdfs.py`](./scripts/generate_pdfs.py)
+(`pip install reportlab && python3 scripts/generate_pdfs.py`).
 
 ---
 
