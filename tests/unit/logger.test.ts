@@ -1,3 +1,5 @@
+import { PassThrough } from 'stream';
+import pino from 'pino';
 import { logger } from '../../src/logger';
 
 /**
@@ -11,6 +13,7 @@ import { logger } from '../../src/logger';
  */
 describe('logger redaction (audit M9)', () => {
   let written = '';
+  let logger;
 
   beforeAll(() => {
     // Pino writes via the `[pino.symbols.streamSym]` stream — easier to
@@ -25,7 +28,31 @@ describe('logger redaction (audit M9)', () => {
 
   beforeEach(() => {
     written = '';
-  });
+
+    const stream = new PassThrough();
+    stream.on('data', (d) => (written += d.toString()));
+
+    logger = pino(
+      {
+        level: 'debug',
+        redact: {
+          paths: [
+            'DATABASE_URL',
+            'err.config',
+            'err.request',
+            'err.response.headers'
+          ],
+          censor: '[REDACTED]'
+        },
+        serializers: {
+          err: pino.stdSerializers.err
+        }
+      },
+      stream
+    });
+
+
+    const flush = () => new Promise((r) => setImmediate(r));
 
   it('redacts top-level connection strings', () => {
     logger.error({ DATABASE_URL: 'postgres://user:secret@host/db' }, 'oops');
@@ -46,6 +73,7 @@ describe('logger redaction (audit M9)', () => {
       },
     });
     logger.error({ err }, 'upstream error');
+    await flush();
     expect(written).toContain('boom');
     expect(written).toContain('AxiosError');
     expect(written).toContain('502');
