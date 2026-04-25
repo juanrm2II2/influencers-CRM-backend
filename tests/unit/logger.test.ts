@@ -1,5 +1,6 @@
 import { PassThrough } from 'stream';
 import pino from 'pino';
+import type { Logger } from 'pino';
 import { logger } from '../../src/logger';
 
 /**
@@ -13,7 +14,7 @@ import { logger } from '../../src/logger';
  */
 describe('logger redaction (audit M9)', () => {
   let written = '';
-  let logger;
+  let logger: Logger;
 
   beforeAll(() => {
     // Pino writes via the `[pino.symbols.streamSym]` stream — easier to
