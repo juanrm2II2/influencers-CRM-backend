@@ -1,16 +1,27 @@
 # ---------------------------------------------------------------------------
 # Stage 1 — Install dependencies and build
 # ---------------------------------------------------------------------------
-# NOTE (audit L5): pin the base image by SHA-256 digest in production
-# Dockerfiles, e.g.:
+# Audit L5: the base image is pinned by SHA-256 digest below so that an
+# attacker who compromises the registry mirror cannot back-date a malicious
+# `node:20-alpine` tag without changing the digest (which would fail the
+# `docker build` here and the cosign verification in CD).
 #
-#   FROM node:20-alpine@sha256:<full-digest>
+# To refresh the digest after a Node.js patch release, run:
 #
-# The CI/CD pipeline should resolve `node:20-alpine` to its digest at build
-# time, sign the resulting image with cosign, and verify the signature
-# during deployment.  Tag-only references are mutable and can be
-# back-dated by an attacker who controls the registry mirror.
-FROM node:20-alpine AS builder
+#   docker buildx imagetools inspect node:20-alpine \
+#     --format '{{.Manifest.Digest}}'
+#
+# and update both stages below.  The CI/CD pipeline must additionally sign
+# the resulting image with cosign and verify the signature during
+# deployment, and CI runs `npm audit signatures` to catch tampered npm
+# packages.
+# Declared above the first FROM so it is global to the Dockerfile; both
+# `FROM ${NODE_IMAGE}` instructions below resolve to the same digest.  The
+# default is sufficient — no re-declaration is needed inside the stages
+# because NODE_IMAGE is only consumed by the FROM lines themselves.
+ARG NODE_IMAGE=node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -25,7 +36,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2 — Production image
 # ---------------------------------------------------------------------------
-FROM node:20-alpine
+FROM ${NODE_IMAGE}
 
 # Run as non-root for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
