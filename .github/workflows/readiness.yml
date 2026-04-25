@@ -1,0 +1,54 @@
+name: Pre-ICO Readiness
+
+# Computes 100 - 12·H - 4·M - 1·L from SECURITY_AUDIT_CHECKLIST.md and
+# fails the job when the score drops below the configured threshold.
+# Threshold can be raised in lockstep with remediation progress.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    name: Compute readiness score
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Compute readiness score
+        id: score
+        run: |
+          node scripts/compute-readiness.js | tee readiness.txt
+          # Persist the JSON summary (last line) for the job summary step.
+          tail -n 1 readiness.txt > readiness.json
+          echo "score=$(node -e 'console.log(JSON.parse(require(\"fs\").readFileSync(\"readiness.json\",\"utf8\")).score)')" >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        run: |
+          {
+            echo "## Pre-ICO Readiness"
+            echo
+            echo '```'
+            cat readiness.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce minimum score
+        # Raise this number as the team closes findings in
+        # SECURITY_AUDIT_CHECKLIST.md.  The investor-facing target is
+        # 90 (no High, ≤ 1 Medium, ≤ 6 Low) — start at 70 so the
+        # current 76/100 baseline is green and regressions are
+        # surfaced immediately.
+        run: node scripts/compute-readiness.js --min 70
