@@ -56,13 +56,13 @@ describe('logger redaction (audit M9)', () => {
 
     const flush = () => new Promise((r) => setImmediate(r));
 
-  it('redacts top-level connection strings', async () => {
+  it('redacts top-level connection strings', await () => {
     logger.error({ DATABASE_URL: 'postgres://user:secret@host/db' }, 'oops');
     expect(written).toContain('[REDACTED]');
     expect(written).not.toContain('postgres://user:secret@host/db');
   });
 
-  it('strips AxiosError config / request / response.headers via the err serializer', async () => {
+  it('strips AxiosError config / request / response.headers via the err serializer', await () => {
     const err = Object.assign(new Error('boom'), {
       name: 'AxiosError',
       code: 'ETIMEDOUT',
