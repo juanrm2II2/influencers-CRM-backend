@@ -1,7 +1,7 @@
 import { PassThrough } from 'stream';
 import pino from 'pino';
 import type { Logger } from 'pino';
-import { logger } from '../../src/logger';
+import { logger as appLogger } from '../../src/logger';
 
 /**
  * Smoke test for the redaction config in src/logger.ts (audit M9).
@@ -17,12 +17,11 @@ describe('logger redaction (audit M9)', () => {
   let logger: Logger;
 
   beforeAll(() => {
-    // Pino writes via the `[pino.symbols.streamSym]` stream — easier to
-    // intercept process.stdout.write since pino flushes synchronously
-    // for `error` level by default in the test environment.
     const origWrite = process.stdout.write.bind(process.stdout);
     (process.stdout as { write: (chunk: string | Uint8Array) => boolean }).write = (chunk) => {
-      written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+      written += typeof chunk === 'string'
+        ? chunk
+        : Buffer.from(chunk).toString('utf8');
       return origWrite(chunk);
     };
   });
@@ -53,32 +52,43 @@ describe('logger redaction (audit M9)', () => {
     );
   });
 
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-    const flush = () => new Promise((r) => setImmediate(r));
+  it('redacts top-level connection strings', async () => {
+    logger.error(
+      { DATABASE_URL: 'postgres://user:secret@host/db' },
+      'oops'
+    );
 
-  it('redacts top-level connection strings', await () => {
-    logger.error({ DATABASE_URL: 'postgres://user:secret@host/db' }, 'oops');
+    await flush();
+
     expect(written).toContain('[REDACTED]');
-    expect(written).not.toContain('postgres://user:secret@host/db');
+    expect(written).not.toContain('postgres://user:secret');
   });
 
-  it('strips AxiosError config / request / response.headers via the err serializer', await () => {
-    const err = Object.assign(new Error('boom'), {
-      name: 'AxiosError',
-      code: 'ETIMEDOUT',
-      config: { headers: { Authorization: 'Bearer should-not-leak' } },
-      request: { headers: { 'x-api-key': 'should-not-leak' } },
-      response: {
-        status: 502,
-        headers: { 'set-cookie': 'session=should-not-leak' },
-        config: { headers: { Authorization: 'Bearer should-not-leak' } },
-      },
-    });
-    logger.error({ err }, 'upstream error');
-    async flush();
-    expect(written).toContain('boom');
-    expect(written).toContain('AxiosError');
-    expect(written).toContain('502');
-    expect(written).not.toContain('should-not-leak');
-  });
+  it(
+    'strips AxiosError config / request / response.headers via the err serializer',
+    async () => {
+      const err = Object.assign(new Error('boom'), {
+        name: 'AxiosError',
+        code: '502',
+        config: { headers: { Authorization: 'should-not-leak' } },
+        request: { headers: { 'x-api-key': 'should-not-leak' } },
+        response: {
+          status: 502,
+          headers: { 'set-cookie': 'should-not-leak' },
+          config: {}
+        }
+      });
+
+      logger.error({ err }, 'upstream error');
+
+      await flush();
+
+      expect(written).toContain('boom');
+      expect(written).toContain('AxiosError');
+      expect(written).toContain('502');
+      expect(written).not.toContain('should-not-leak');
+    }
+  );
 });
