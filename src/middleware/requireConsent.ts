@@ -38,8 +38,22 @@ export async function requireConsent(
       return;
     }
 
-    if (!data || !data.granted) {
-      res.status(403).json({ error: 'Data processing consent is required' });
+    if (!data) {
+      // Distinguish "never granted" from "granted then revoked" so UIs can
+      // present the right call-to-action without leaking sensitive state
+      // (audit L4).
+      res.status(403).json({
+        error: 'Data processing consent is required',
+        error_code: 'CONSENT_MISSING',
+      });
+      return;
+    }
+
+    if (!data.granted) {
+      res.status(403).json({
+        error: 'Data processing consent is required',
+        error_code: 'CONSENT_REVOKED',
+      });
       return;
     }
 

@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { recordAuditLog } from './auditLog';
 import { logger } from '../logger';
 import { ConsentType, DsarRequestType, DsarStatus } from '../types';
 
@@ -134,11 +135,19 @@ export async function getDsarRequests(
 
 /**
  * Update DSAR request status (admin operation — uses service-role client).
+ *
+ * Bypasses RLS by design: support staff resolving DSAR tickets need to
+ * reach any user's row.  To compensate, an `admin_action` audit-log entry
+ * is emitted whenever the row actually changes, capturing the admin's
+ * identity, the affected DSAR id, and the previous status (audit L8).
+ * The generic `auditLog` middleware also fires, but the dedicated entry
+ * makes admin DSAR mutations searchable independently of HTTP routing.
  */
 export async function updateDsarStatus(
   requestId: string,
   status: DsarStatus,
-  notes?: string
+  notes?: string,
+  adminContext?: { adminId: string; adminEmail?: string }
 ): Promise<Record<string, unknown> | null> {
   const updates: Record<string, unknown> = {
     status,
@@ -152,6 +161,23 @@ export async function updateDsarStatus(
     updates.notes = notes;
   }
 
+  // Capture the previous status so the admin_action audit entry can
+  // record the state transition (audit L8).
+  let previousStatus: string | undefined;
+  try {
+    const { data: prev } = await supabase
+      .from('dsar_requests')
+      .select('status')
+      .eq('id', requestId)
+      .maybeSingle();
+    previousStatus =
+      prev && typeof prev === 'object' && 'status' in prev
+        ? ((prev as { status?: string }).status ?? undefined)
+        : undefined;
+  } catch (err) {
+    logger.warn({ err, requestId }, 'Failed to read previous DSAR status');
+  }
+
   const { data, error } = await supabase
     .from('dsar_requests')
     .update(updates)
@@ -162,6 +188,26 @@ export async function updateDsarStatus(
   if (error) {
     logger.error({ err: error }, 'Failed to update DSAR status');
     return null;
+  }
+
+  if (data && adminContext) {
+    // Fire-and-forget: an admin_action failure must not undo the legitimate
+    // status update.  The generic auditLog middleware still records the
+    // HTTP request; this entry adds the previous-status diff.
+    recordAuditLog({
+      actor_id: adminContext.adminId,
+      actor_email: adminContext.adminEmail,
+      action: 'admin_action:dsar.update_status',
+      resource: 'dsar_requests',
+      resource_id: requestId,
+      before_state: { status: previousStatus ?? null },
+      after_state: { status, completed_at: updates.completed_at ?? null },
+    }).catch((auditErr) => {
+      logger.error(
+        { err: auditErr, requestId, adminId: adminContext.adminId },
+        'Failed to record admin_action audit entry for DSAR update',
+      );
+    });
   }
 
   return data as Record<string, unknown>;
@@ -216,8 +262,28 @@ export async function exportUserData(
 // ---------------------------------------------------------------------------
 
 /**
- * Erase all personal data for a user (right to be forgotten).
- * Returns a summary of what was deleted.
+ * Erase all personal data for a user (right to be forgotten — GDPR Art. 17).
+ *
+ * Cascade order:
+ *
+ *   1. `outreach`         — child of `influencers`; delete first to avoid
+ *                            orphaned rows if the FK does not cascade.
+ *   2. `influencers`      — user-owned CRM rows (free-text notes, scraped
+ *                            bios, engagement metrics).
+ *   3. `consent`          — preference rows.
+ *   4. `audit_log`        — anonymise actor PII **and** clear the JSONB
+ *                            `before_state` / `after_state` columns so the
+ *                            historical request payloads (notes,
+ *                            message bodies, scraped biographies) do not
+ *                            survive erasure (audit M1 + M3).
+ *   5. `dsar_requests`    — close out the user's existing DSAR rows.
+ *
+ * Uses the service-role client because RLS otherwise blocks cross-table
+ * cleanup performed on behalf of the data subject.
+ *
+ * Returns a structured summary of which tables were touched and which
+ * (if any) returned errors so the controller can surface a 207 Multi-Status
+ * when the operation is partial.
  */
 export async function eraseUserData(
   userId: string
@@ -225,7 +291,34 @@ export async function eraseUserData(
   const deletedTables: string[] = [];
   const errors: string[] = [];
 
-  // Delete consent records
+  // 1. Outreach rows (child table — delete before influencers so we never
+  //    rely on a database-level cascade that may not be configured in
+  //    older environments).
+  const { error: outreachError } = await supabase
+    .from('outreach')
+    .delete()
+    .eq('user_id', userId);
+
+  if (outreachError) {
+    errors.push(`outreach: ${outreachError.message}`);
+  } else {
+    deletedTables.push('outreach');
+  }
+
+  // 2. Influencer rows (audit M1 — previously left in place, violating
+  //    GDPR Art. 17).
+  const { error: influencersError } = await supabase
+    .from('influencers')
+    .delete()
+    .eq('user_id', userId);
+
+  if (influencersError) {
+    errors.push(`influencers: ${influencersError.message}`);
+  } else {
+    deletedTables.push('influencers');
+  }
+
+  // 3. Consent records
   const { error: consentError } = await supabase
     .from('consent')
     .delete()
@@ -237,13 +330,18 @@ export async function eraseUserData(
     deletedTables.push('consent');
   }
 
-  // Anonymize audit log entries (keep for compliance, but strip PII)
+  // 4. Anonymise audit log entries (kept for compliance / forensics, but
+  //    stripped of every PII surface — actor identity, IP, and the JSONB
+  //    payload columns that historically captured the raw request body
+  //    [audit M3]).
   const { error: auditError } = await supabase
     .from('audit_log')
     .update({
       actor_id: 'REDACTED',
       actor_email: null,
       ip_address: null,
+      before_state: null,
+      after_state: null,
     })
     .eq('actor_id', userId);
 
@@ -253,7 +351,8 @@ export async function eraseUserData(
     deletedTables.push('audit_log (anonymized)');
   }
 
-  // Mark DSAR requests as completed
+  // 5. Close DSAR rows so support staff have a record of the request
+  //    without retaining the user's email / free-text notes.
   const { error: dsarError } = await supabase
     .from('dsar_requests')
     .update({

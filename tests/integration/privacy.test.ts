@@ -261,6 +261,39 @@ describe('DELETE /api/privacy/data', () => {
     expect(res.body).toHaveProperty('message');
     expect(res.body).toHaveProperty('deletedTables');
   });
+
+  it('should erase influencers and outreach rows (audit M1)', async () => {
+    // Track which tables receive a `.delete()` call so we can assert that
+    // the new GDPR Art. 17 cascade covers `outreach`, `influencers`, and
+    // `consent` — previously only `consent` was deleted.
+    const deletedFromTables: string[] = [];
+
+    mockDelete.mockImplementation(() => queryChain);
+    mockUpdate.mockImplementation(() => queryChain);
+    mockEq.mockResolvedValue({ error: null });
+
+    mockFrom.mockImplementation((table: string) => {
+      // Wrap delete so we can record the originating table name.
+      const originalDelete = queryChain.delete;
+      queryChain.delete = jest.fn((...args: unknown[]) => {
+        deletedFromTables.push(table);
+        return originalDelete(...args);
+      });
+      return queryChain;
+    });
+
+    const res = await request(app)
+      .delete('/api/privacy/data')
+      .set('Authorization', `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(deletedFromTables).toEqual(
+      expect.arrayContaining(['outreach', 'influencers', 'consent']),
+    );
+    expect(res.body.deletedTables).toEqual(
+      expect.arrayContaining(['outreach', 'influencers', 'consent']),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

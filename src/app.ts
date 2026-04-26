@@ -142,7 +142,22 @@ export function createApp(): express.Express {
   // Deep readiness probe (L3): verifies that downstream dependencies are
   // reachable.  Returns 503 when the JWT key provider or the database are
   // unavailable so load-balancers stop routing traffic to a broken pod.
-  app.get('/health/ready', async (_req, res) => {
+  //
+  // Audit L1: the probe performs a Supabase round-trip and a key-provider
+  // invocation per call.  Without a dedicated limiter, anonymous traffic
+  // could amplify load against KMS / the database.  Cap at 30 req / minute
+  // per IP — well above any realistic load-balancer health check cadence
+  // (k8s default is 10 s = 6 req/min) but tight enough to neutralise a
+  // single-IP amplifier.
+  const readyLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many readiness checks, please try again later' },
+  });
+
+  app.get('/health/ready', readyLimiter, async (_req, res) => {
     const checks: Record<string, 'ok' | 'fail'> = {};
     let healthy = true;
 

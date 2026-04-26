@@ -52,11 +52,16 @@ router.get('/requests', listDsarRequests);
 router.post('/requests', validateDsarRequest, createDsar);
 
 // PATCH /api/privacy/requests/:id — update DSAR status (admin only)
+//
+// Middleware order matters: `authorize('admin')` runs before
+// `validateDsarUpdate` so a non-admin caller receives a 403 before the
+// payload is inspected.  Validating first leaks a 400-vs-403 oracle that
+// distinguishes well-formed from malformed admin payloads (audit M4).
 router.patch(
   '/requests/:id',
   validateIdParam,
-  validateDsarUpdate,
   authorize('admin'),
+  validateDsarUpdate,
   updateDsar
 );
 

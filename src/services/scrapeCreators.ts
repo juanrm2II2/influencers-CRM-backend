@@ -146,13 +146,18 @@ function extractProfileData(
   let profile_pic_url: string | null = null;
   let profile_url: string | null = null;
 
-  // Normalize fields across platforms
+  // Normalize fields across platforms.
+  //
+  // Audit L6: previously fell back to `handle` when no display name was
+  // present, conflating the two semantically distinct fields and routing
+  // the (public) handle through PII encryption.  Leave `full_name` null
+  // when no genuine display name is provided.
   full_name =
     data.full_name ??
     data.name ??
     data.nickname ??
     data.uniqueId ??
-    handle;
+    null;
 
   bio = data.biography ?? data.bio ?? data.signature ?? null;
 
