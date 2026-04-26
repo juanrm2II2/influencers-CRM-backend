@@ -65,7 +65,7 @@ describe('requireConsent middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should return 403 when no consent record exists', async () => {
+  it('should return 403 with CONSENT_MISSING when no consent record exists (audit L4)', async () => {
     setupChain();
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
@@ -75,11 +75,14 @@ describe('requireConsent middleware', () => {
     await requireConsent(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Data processing consent is required' });
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Data processing consent is required',
+      error_code: 'CONSENT_MISSING',
+    });
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should return 403 when consent is revoked (granted=false)', async () => {
+  it('should return 403 with CONSENT_REVOKED when consent is revoked (audit L4)', async () => {
     setupChain();
     mockMaybeSingle.mockResolvedValueOnce({ data: { granted: false }, error: null });
 
@@ -89,7 +92,10 @@ describe('requireConsent middleware', () => {
     await requireConsent(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Data processing consent is required' });
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Data processing consent is required',
+      error_code: 'CONSENT_REVOKED',
+    });
     expect(next).not.toHaveBeenCalled();
   });
 

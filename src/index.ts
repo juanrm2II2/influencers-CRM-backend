@@ -38,7 +38,37 @@ assertSupabaseAdminSignOut();
 
 const app = createApp();
 
-const PORT = process.env.PORT ?? 3001;
+/**
+ * Validate the PORT environment variable (audit L2).
+ *
+ * `process.env.PORT` is consumed verbatim by `app.listen`.  Mistyped
+ * values (`PORT=foo`, `PORT=` …) reach Node and produce an opaque
+ * TypeError at start-up rather than a structured fatal log.  Coerce
+ * with `Number()` and fall back to 3001 when the result is not a
+ * finite integer in the valid TCP port range.
+ */
+function resolvePort(): number {
+  const raw = process.env.PORT;
+  if (raw === undefined || raw === '') {
+    return 3001;
+  }
+  const parsed = Number(raw);
+  const isValidPort =
+    Number.isFinite(parsed) &&
+    Number.isInteger(parsed) &&
+    parsed >= 1 &&
+    parsed <= 65535;
+  if (!isValidPort) {
+    logger.warn(
+      { rawPort: raw },
+      `Invalid PORT environment variable "${raw}"; falling back to 3001`,
+    );
+    return 3001;
+  }
+  return parsed;
+}
+
+const PORT = resolvePort();
 
 // ---------------------------------------------------------------------------
 // Global error handlers — log fatal errors and exit cleanly

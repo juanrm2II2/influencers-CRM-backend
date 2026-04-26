@@ -127,7 +127,13 @@ export async function updateDsar(
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    const result = await updateDsarStatus(id, status, notes);
+    // Forward the admin identity so updateDsarStatus can emit a dedicated
+    // `admin_action` audit-log entry capturing the previous status (audit L8).
+    const adminContext = req.user
+      ? { adminId: req.user.sub, adminEmail: req.user.email }
+      : undefined;
+
+    const result = await updateDsarStatus(id, status, notes, adminContext);
 
     if (!result) {
       res.status(404).json({ error: 'Request not found' });

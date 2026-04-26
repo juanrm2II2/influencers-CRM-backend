@@ -150,7 +150,7 @@ describe('privacy controller', () => {
   });
 
   describe('updateDsar', () => {
-    it('should update DSAR status (admin)', async () => {
+    it('should update DSAR status (admin) and forward admin context (audit L8)', async () => {
       (mockReq as any).params = { id: 'd1' };
       mockReq.body = { status: 'completed', notes: 'Done' };
       const result = { id: 'd1', status: 'completed' };
@@ -158,7 +158,12 @@ describe('privacy controller', () => {
 
       await updateDsar(mockReq as any, mockRes as Response);
 
-      expect(mockUpdateDsarStatus).toHaveBeenCalledWith('d1', 'completed', 'Done');
+      expect(mockUpdateDsarStatus).toHaveBeenCalledWith(
+        'd1',
+        'completed',
+        'Done',
+        { adminId: 'user-1', adminEmail: 'test@test.com' },
+      );
       expect(mockRes.json).toHaveBeenCalledWith(result);
     });
 

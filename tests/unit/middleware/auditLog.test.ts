@@ -175,4 +175,51 @@ describe('auditLog middleware — before-state capture', () => {
       })
     );
   });
+
+  it('should redact non-allow-listed fields from after_state (audit M3)', async () => {
+    // Free-text PII fields (notes, message_sent, response, bio) must be
+    // dropped before the audit row is written; only categorical /
+    // operational fields (status, niche, channel …) survive.
+    mockReq.method = 'POST';
+    mockReq.params = {};
+    mockReq.originalUrl = '/api/influencers/abc/outreach';
+    mockReq.body = {
+      channel: 'email',
+      contact_date: '2026-01-01',
+      message_sent: 'hello secret diary entry',
+      response: 'private response with PII',
+      notes: 'do not store this',
+    };
+
+    auditLog(mockReq as Request, mockRes as Response, next);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    (mockRes.json as jest.Mock)({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const args = mockRecordAuditLog.mock.calls[0][0];
+    expect(args.after_state).toEqual({
+      channel: 'email',
+      contact_date: '2026-01-01',
+    });
+    expect(JSON.stringify(args.after_state)).not.toContain('secret diary');
+    expect(JSON.stringify(args.after_state)).not.toContain('private response');
+    expect(JSON.stringify(args.after_state)).not.toContain('do not store');
+  });
+
+  it('should leave after_state undefined when no allow-listed field is present (audit M3)', async () => {
+    mockReq.method = 'POST';
+    mockReq.params = {};
+    mockReq.originalUrl = '/api/influencers/abc/outreach';
+    mockReq.body = { message_sent: 'only PII here', response: 'also PII' };
+
+    auditLog(mockReq as Request, mockRes as Response, next);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    (mockRes.json as jest.Mock)({});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const args = mockRecordAuditLog.mock.calls[0][0];
+    expect(args.after_state).toBeUndefined();
+  });
 });

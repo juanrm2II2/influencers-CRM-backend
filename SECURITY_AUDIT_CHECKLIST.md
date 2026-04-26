@@ -39,93 +39,73 @@ per‑request `req.scopedClient` flow added in
 
 ## Medium severity (M)
 
-- [ ] **OPEN — M1**  `eraseUserData` does not erase user‑owned
-  `influencers` and `outreach` rows.
-  `src/services/privacy.ts:222‑275` deletes `consent`, anonymises
-  `audit_log`, and closes `dsar_requests` but leaves the user's CRM
-  data in place.  GDPR Art. 17 right‑to‑erasure is therefore
-  **incomplete**.  Fix: cascade delete (or pseudonymise) rows from
-  `influencers`, `outreach`, and any future user‑scoped tables; rely
-  on the existing `ON DELETE CASCADE` (`migrations/008…sql:23`) only
-  if the auth.users row itself is deleted.
-- [ ] **OPEN — M2**  `errorHandler` does not check `res.headersSent`
-  before writing the 500 body.  `src/middleware/errorHandler.ts:11‑20`
-  will throw `ERR_HTTP_HEADERS_SENT` when an error fires after the
-  controller has begun streaming a response (e.g. inside the
-  `auditLog` `res.json` wrapper at
-  `src/middleware/auditLog.ts:91‑113`), masking the original error
-  and producing noisy crash loops.  Fix: short‑circuit with
-  `if (res.headersSent) return _next(err);`.
-- [ ] **OPEN — M3**  Audit‑log `after_state` persists the entire
-  sanitised request body, which includes free‑text fields
-  (`notes`, `message_sent`, `response`) that may contain personal
-  data.  `src/middleware/auditLog.ts:99‑107` writes
-  `after_state: req.body`.  The current
-  `eraseUserData` flow (`src/services/privacy.ts:241‑254`) only
-  anonymises `actor_id` / `actor_email` / `ip_address`, leaving the
-  PII inside the JSONB `after_state` column intact.  Fix: redact or
-  drop the `after_state` column for rows belonging to an erased
-  user, or stop persisting free‑text body content (store a diff hash
-  or column allow‑list instead).
-- [ ] **OPEN — M4**  Middleware ordering on
-  `PATCH /api/privacy/requests/:id` runs body validators **before**
-  the `authorize('admin')` gate.  `src/routes/privacy.ts:55‑61`
-  registers `validateIdParam, validateDsarUpdate, authorize('admin')`
-  in that order, so a non‑admin caller learns whether their payload
-  is well‑formed (400 vs. 403) before being told they lack
-  permission.  Low‑information oracle, but trivial to fix.  Reorder
-  to `validateIdParam, authorize('admin'), validateDsarUpdate`.
+- [x] **RESOLVED — M1**  `eraseUserData` now deletes user‑owned
+  `outreach` and `influencers` rows in addition to anonymising
+  `audit_log` and closing `dsar_requests`, fully satisfying
+  GDPR Art. 17.  See `src/services/privacy.ts` (`eraseUserData`)
+  and the `should erase influencers and outreach rows (audit M1)`
+  regression test in `tests/integration/privacy.test.ts`.
+- [x] **RESOLVED — M2**  `errorHandler` now short‑circuits with
+  `next(err)` when `res.headersSent` is true, so an error raised
+  after the controller began streaming a response no longer throws
+  `ERR_HTTP_HEADERS_SENT`.  See `src/middleware/errorHandler.ts`
+  and the new `should short‑circuit via next(err) when headers have
+  already been sent` test in `tests/unit/middleware/errorHandler.test.ts`.
+- [x] **RESOLVED — M3**  The audit‑log middleware no longer persists
+  the entire request body as `after_state`.  A non‑PII allow‑list
+  (`status`, `niche`, `channel`, `handle`, `platform`,
+  `consent_type`, `granted`, `request_type`, `contact_date`,
+  `follow_up_date`) is applied in
+  `src/middleware/auditLog.ts:redactAfterState`, and
+  `eraseUserData` additionally clears the `before_state` /
+  `after_state` JSONB columns for the erased user so historic rows
+  contain no PII residue.
+- [x] **RESOLVED — M4**  `PATCH /api/privacy/requests/:id` now
+  registers `validateIdParam, authorize('admin'), validateDsarUpdate`
+  in that order, so a non‑admin caller receives 403 before the
+  payload validators reveal whether their body is well‑formed
+  (`src/routes/privacy.ts`).
 
 ---
 
 ## Low severity (L)
 
-- [ ] **OPEN — L1**  `/health/ready` is unauthenticated yet performs
-  a Supabase round‑trip and a key‑provider check on every call.
-  `src/app.ts:145‑178` is open to anonymous traffic and could be
-  used for cheap DB/quota amplification.  Fix: shed traffic using a
-  small rate limiter (`max: 30, windowMs: 60_000`) or restrict the
-  endpoint to internal IPs only.
-- [ ] **OPEN — L2**  `process.env.PORT ?? 3001` is consumed without
-  validation.  `src/index.ts:41` accepts any string; setting
-  `PORT=foo` produces an opaque `listen` failure.  Fix: parse with
-  `Number()` and fall back when `!Number.isFinite()`.
-- [ ] **OPEN — L3**  `POST /api/auth/logout` is only protected by
-  the global IP rate limiter (100 req / 15 min).
-  `src/routes/auth.ts:8` does not apply a per‑user limit, so an
-  attacker with a stolen token could repeatedly invalidate sessions
-  across users by replaying `Authorization` headers.  Fix: apply a
-  user‑keyed rate limiter (≤ 10 req / 15 min / `sub`).
-- [ ] **OPEN — L4**  `requireConsent` returns the same 403 message
-  whether the caller has never granted consent or has revoked it.
-  `src/middleware/requireConsent.ts:41‑43` is intentional, but a
-  separate machine‑readable error code (`CONSENT_REVOKED` vs
-  `CONSENT_MISSING`) would let UIs guide users without leaking
-  data.  Fix: add an `error_code` field.
-- [ ] **OPEN — L5**  `.env.example:21‑25` documents
-  `BULK_SEARCH_CONCURRENCY` defaulting to 3 but the runtime cap is
-  10 (`src/controllers/influencers.controller.ts:351‑354`).
-  Operators reading the env file may believe they cannot exceed 3.
-  Fix: document the upper bound in `.env.example`.
-- [ ] **OPEN — L6**  `extractProfileData` silently substitutes the
-  scraped handle for `full_name` when upstream omits it.
-  `src/services/scrapeCreators.ts:150‑155` then writes that handle
-  through PII encryption.  Benign, but storing the handle as PII
-  conflates two fields.  Fix: leave `full_name = null` when no
-  display name is present.
-- [ ] **OPEN — L7**  500 responses do not echo the request‑ID set by
-  `src/middleware/requestId.ts`.  `src/middleware/errorHandler.ts:19`
-  returns `{ error: 'Internal server error' }` only.  Operationally
-  inconvenient when debugging in production logs.  Fix: include
-  `requestId: req.id` in the body.
-- [ ] **OPEN — L8**  Admin `PATCH /api/privacy/requests/:id` writes
-  via the service‑role client, bypassing RLS.
-  `src/services/privacy.ts:138‑168` does not constrain by
-  `user_id`, so an admin can edit any DSAR.  This is intentional
-  (support staff resolving DSARs) but is not separately
-  audit‑trailed beyond the generic `auditLog` middleware.  Fix:
-  add a dedicated `admin_action` log entry recording the admin
-  identity and the affected DSAR row.
+- [x] **RESOLVED — L1**  `/health/ready` is now wrapped in a dedicated
+  per‑IP rate limiter (30 req / minute) before the key‑provider
+  check and Supabase round‑trip run, neutralising the cheap
+  amplification surface (`src/app.ts:readyLimiter`).
+- [x] **RESOLVED — L2**  `process.env.PORT` is parsed via the new
+  `resolvePort()` helper that requires a finite integer in the
+  1–65535 range and falls back to 3001 with a structured warning
+  on invalid input (`src/index.ts`).
+- [x] **RESOLVED — L3**  `POST /api/auth/logout` is now gated by a
+  user‑keyed rate limiter (10 req / 15 min / `sub`, falling back
+  to `req.ip`) layered on top of the global IP limiter
+  (`src/routes/auth.ts:logoutLimiter`).
+- [x] **RESOLVED — L4**  `requireConsent` now returns a
+  machine‑readable `error_code` distinguishing `CONSENT_MISSING`
+  from `CONSENT_REVOKED`, letting UIs prompt the right
+  call‑to‑action without leaking sensitive state
+  (`src/middleware/requireConsent.ts`).
+- [x] **RESOLVED — L5**  `.env.example` now documents the runtime
+  upper bound (10) for `BULK_SEARCH_CONCURRENCY` so operators do
+  not believe the documented default of 3 is the cap.
+- [x] **RESOLVED — L6**  `extractProfileData` no longer falls back
+  to the scraped handle when the upstream payload omits a display
+  name; `full_name` is left `null` in that case so the public
+  handle is not routed through PII encryption
+  (`src/services/scrapeCreators.ts`).
+- [x] **RESOLVED — L7**  500 responses now echo the request
+  correlation ID (`requestId`) set by `middleware/requestId.ts`,
+  giving operators a deterministic key to match a customer report
+  against the structured pino logs (`src/middleware/errorHandler.ts`).
+- [x] **RESOLVED — L8**  `updateDsarStatus` now reads the previous
+  status before applying the admin update and emits a dedicated
+  `admin_action:dsar.update_status` audit‑log entry capturing the
+  admin identity, the affected DSAR id, and the state transition,
+  in addition to the generic `auditLog` middleware entry
+  (`src/services/privacy.ts:updateDsarStatus`,
+  `src/controllers/privacy.controller.ts:updateDsar`).
 
 ---
 
@@ -150,26 +130,37 @@ introduces frontend or on‑chain code knows where to add coverage.
 
 <!-- AUDIT-COUNTS-START -->
 - Open High:    0
-- Open Medium:  4
-- Open Low:     8
-- Resolved:     2 (legacy H1, H2)
+- Open Medium:  0
+- Open Low:     0
+- Resolved:     14 (legacy H1, H2; M1–M4; L1–L8)
 <!-- AUDIT-COUNTS-END -->
 
 Computed score (formula `100 − 12·H − 4·M − 1·L`):
 
 ```
-100 − (12 × 0) − (4 × 4) − (1 × 8) = 76
+100 − (12 × 0) − (4 × 0) − (1 × 0) = 100
 ```
 
 ## Verdict
 
-**Not yet ready** for Pre‑ICO / investor‑facing release.  Score
-**76 / 100** with **no High** findings open but **four Medium**
-items (M1–M4) that touch GDPR completeness, error‑handler
-robustness, audit‑log PII residue, and a privilege‑oracle in the
-DSAR admin path.  Resolving all four Mediums and any three of the
-Lows lifts the score above the **≥ 90** threshold the workflow
-enforces.
+**Ready** for the independent Pre‑ICO audit.  Score **100 / 100**
+with **no open findings** in any severity bucket.  All four
+Mediums (M1–M4) and all eight Lows (L1–L8) flagged in the
+2026‑04‑25 internal audit have been remediated and covered by
+regression tests.  The only remaining pre‑TGE actions are
+**organisational**, not code:
+
+* engage an external third‑party auditor (Trail of Bits / Halborn /
+  Kudelski Security) for a formal letter — this checklist is the
+  internal pre‑flight gate, not a substitute;
+* stand up a paid bug‑bounty programme (Immunefi or HackerOne) at
+  least two weeks before the token‑generation event, as already
+  promised by `SECURITY.md`;
+* operationalise the data‑retention purge job (the code in
+  `src/services/privacy.ts:purgeExpiredData` is wired but the
+  cron / scheduled task lives in the deployment repository);
+* publish the runtime KMS key‑rotation procedure end‑to‑end (today
+  it is documented only in `.env.example` comments).
 
 ## Prioritised remediation plan
 

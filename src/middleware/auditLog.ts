@@ -9,6 +9,61 @@ import { anonymizeIp } from '../services/privacy';
 const AUDITABLE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /**
+ * Allow-list of body field names that are safe to persist into
+ * `audit_log.after_state` (audit M3).
+ *
+ * The previous implementation stored the entire (sanitised) `req.body`.
+ * That body routinely contains free-text PII — `notes`, `message_sent`,
+ * `response`, scraped `bio` — which then survives a right-to-erasure
+ * sweep because `eraseUserData` only anonymises `actor_id` /
+ * `actor_email` / `ip_address` at the row level (audit M1/M3 link).
+ *
+ * The fields below are **categorical or operational metadata only**:
+ *   - influencers / outreach: `handle`, `platform`, `status`, `niche`,
+ *     `channel`, `contact_date`, `follow_up_date`
+ *   - privacy: `consent_type`, `granted`, `request_type`
+ *
+ * Anything not in this list — notes, message bodies, scraped biographies,
+ * URLs, free-form text — is dropped before the row is written.  Operators
+ * can still see *which* operation occurred and on which categorical
+ * dimensions; investigators who need the full payload should subpoena the
+ * structured request log, which has a shorter retention window.
+ */
+const AFTER_STATE_ALLOWLIST: ReadonlySet<string> = new Set([
+  'handle',
+  'platform',
+  'status',
+  'niche',
+  'channel',
+  'contact_date',
+  'follow_up_date',
+  'consent_type',
+  'granted',
+  'request_type',
+]);
+
+/**
+ * Project a request body down to the audit-log allow-list, dropping any
+ * field whose name is not on `AFTER_STATE_ALLOWLIST`.  Returns `undefined`
+ * when no whitelisted field is present so the JSONB column is left NULL
+ * rather than being populated with `{}`.
+ */
+function redactAfterState(
+  body: unknown
+): Record<string, unknown> | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return undefined;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    if (AFTER_STATE_ALLOWLIST.has(key)) {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Fetch the current state of a resource from the database before a mutation.
  * Returns `undefined` when the resource cannot be identified or found.
  *
@@ -58,8 +113,8 @@ async function fetchBeforeState(
  * - Timestamp (handled by database default)
  * - Action (HTTP method + path)
  * - Before-state (current DB record, for updates/deletes)
- * - Request body as "after_state" (for creates/updates)
- * - IP address
+ * - Allow-listed (non-PII) request fields as `after_state` (audit M3)
+ * - IP address (anonymised — audit M9)
  *
  * Must be placed after the authenticate middleware so that req.user is available.
  *
@@ -102,7 +157,7 @@ export async function auditLog(
         after_state:
           req.method === 'DELETE'
             ? undefined
-            : (req.body as Record<string, unknown>),
+            : redactAfterState(req.body),
         ip_address: anonymizeIp(req.ip) ?? undefined,
       }).catch((auditErr) => {
         logger.error({ err: auditErr }, 'Audit log recording failed');
