@@ -118,9 +118,9 @@ def _esc(text: str) -> str:
 
 
 FINDINGS = [
-    # (severity, id, title, file:line, why, fix, excerpt)
+    # (severity, id, status, title, file:line, why, fix, excerpt)
     (
-        "MEDIUM", "M1",
+        "MEDIUM", "M1", "RESOLVED",
         "Right-to-erasure does not delete user-owned CRM rows",
         "src/services/privacy.ts:222-275",
         (
@@ -146,7 +146,7 @@ FINDINGS = [
         ),
     ),
     (
-        "MEDIUM", "M2",
+        "MEDIUM", "M2", "RESOLVED",
         "errorHandler does not check res.headersSent",
         "src/middleware/errorHandler.ts:11-20",
         (
@@ -169,7 +169,7 @@ FINDINGS = [
         ),
     ),
     (
-        "MEDIUM", "M3",
+        "MEDIUM", "M3", "RESOLVED",
         "Audit log persists raw request body as after_state",
         "src/middleware/auditLog.ts:91-113",
         (
@@ -194,7 +194,7 @@ FINDINGS = [
         ),
     ),
     (
-        "MEDIUM", "M4",
+        "MEDIUM", "M4", "RESOLVED",
         "Validators run before authorize() on DSAR admin route",
         "src/routes/privacy.ts:55-61",
         (
@@ -219,7 +219,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L1",
+        "LOW", "L1", "RESOLVED",
         "/health/ready is unauthenticated and triggers DB I/O",
         "src/app.ts:145-178",
         (
@@ -239,7 +239,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L2",
+        "LOW", "L2", "RESOLVED",
         "PORT env var is not validated",
         "src/index.ts:41",
         (
@@ -257,7 +257,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L3",
+        "LOW", "L3", "RESOLVED",
         "Logout has no per-user rate limit",
         "src/routes/auth.ts:8",
         (
@@ -275,7 +275,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L4",
+        "LOW", "L4", "RESOLVED",
         "requireConsent does not distinguish missing vs revoked",
         "src/middleware/requireConsent.ts:41-43",
         (
@@ -296,7 +296,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L5",
+        "LOW", "L5", "RESOLVED",
         ".env.example documents BULK_SEARCH_CONCURRENCY default but not its cap",
         ".env.example:21-25",
         (
@@ -313,7 +313,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L6",
+        "LOW", "L6", "RESOLVED",
         "scrapeCreators substitutes handle for full_name when upstream is empty",
         "src/services/scrapeCreators.ts:150-155",
         (
@@ -330,7 +330,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L7",
+        "LOW", "L7", "RESOLVED",
         "500 responses do not echo the request-id",
         "src/middleware/errorHandler.ts:19",
         (
@@ -347,7 +347,7 @@ FINDINGS = [
         ),
     ),
     (
-        "LOW", "L8",
+        "LOW", "L8", "RESOLVED",
         "Admin DSAR PATCH bypasses RLS with no extra audit trail",
         "src/services/privacy.ts:138-168, src/controllers/privacy.controller.ts:122-141",
         (
@@ -418,13 +418,31 @@ def build_audit_report() -> None:
         styles["Body"],
     ))
 
-    verdict_text = (
-        "<b>Verdict: NOT YET READY</b> for Pre-ICO / investor-facing "
-        "release. <b>Score " + str(score) + " / 100.</b> No High-severity "
-        "findings remain open; four Medium and eight Low findings need "
-        "closure. Closing the four Mediums and any three Lows lifts the "
-        "score above the 90/100 readiness target."
-    )
+    if high == 0 and medium == 0 and low == 0:
+        verdict_text = (
+            "<b>Verdict: READY</b> for the independent Pre-ICO audit. "
+            "<b>Score " + str(score) + " / 100.</b> No High-, Medium-, or "
+            "Low-severity findings remain open. The four Mediums (M1–M4) "
+            "and eight Lows (L1–L8) flagged in the prior internal audit "
+            "have been remediated and covered by Jest regression tests; "
+            "the only remaining pre-TGE actions are organisational "
+            "(third-party auditor letter, bug bounty, key-rotation "
+            "runbook, retention-purge cron) and are tracked at the end "
+            "of this report."
+        )
+    else:
+        verdict_text = (
+            "<b>Verdict: NOT YET READY</b> for Pre-ICO / investor-facing "
+            "release. <b>Score " + str(score) + " / 100.</b> "
+            + (
+                "No High-severity findings remain open; "
+                if high == 0 else
+                f"{high} High-severity finding(s) must be closed first; "
+            )
+            + f"{medium} Medium and {low} Low finding(s) need closure. "
+            "Closing the Mediums and the highest-leverage Lows lifts the "
+            "score above the 90/100 readiness target."
+        )
     story.append(Paragraph(verdict_text, styles["Body"]))
 
     # ---- Counts table ------------------------------------------------------
@@ -476,9 +494,21 @@ def build_audit_report() -> None:
 
     # ---- Findings ----------------------------------------------------------
     story.append(Paragraph("Findings", styles["H2"]))
-    for sev, fid, title, location, why, fix, excerpt in FINDINGS:
+    story.append(Paragraph(
+        "All findings below were identified during the 2026-04-25 "
+        "internal audit pass and have been closed by the commits cited "
+        "in each item.  Status reflects the state of the codebase at "
+        "the commit shown above; the readiness score is recomputed in "
+        "CI on every pull request from "
+        "<font face='Courier'>SECURITY_AUDIT_CHECKLIST.md</font>.",
+        styles["Small"],
+    ))
+    for sev, fid, status, title, location, why, fix, excerpt in FINDINGS:
+        status_color = "#1B7A3E" if status == "RESOLVED" else "#B5311B"
         story.append(Paragraph(
-            f"<b>[{sev}] {fid} — {_esc(title)}</b>", styles["H3"],
+            f"<b>[{sev}] {fid} — {_esc(title)}</b> "
+            f"<font color='{status_color}'><b>[{status}]</b></font>",
+            styles["H3"],
         ))
         story.append(Paragraph(
             f"<b>Location:</b> <font face='Courier'>{_esc(location)}</font>",
@@ -566,32 +596,77 @@ def build_audit_report() -> None:
 
     # ---- Remediation plan --------------------------------------------------
     story.append(Paragraph("Prioritised remediation plan", styles["H2"]))
-    plan = [
-        ("M1", "Extend eraseUserData to cover influencers / outreach. Add "
-               "a regression test in tests/integration/privacy.test.ts."),
-        ("M3", "Stop persisting raw req.body as after_state; use a "
-               "column allow-list or a redacted JSONB diff. Backfill "
-               "during the next maintenance window."),
-        ("M2", "Guard errorHandler with res.headersSent. Add a unit "
-               "test for the double-send path."),
-        ("M4", "Reorder middleware on PATCH /api/privacy/requests/:id "
-               "so authorize('admin') runs before validators."),
-        ("L1, L3", "Add per-route rate limiters for /health/ready and "
-                   "/api/auth/logout."),
-        ("L7", "Include requestId in 500 responses."),
-        ("L2, L4, L5, L6, L8", "Documentation, validation, and "
-                                "admin-audit polish."),
-    ]
+    if high == 0 and medium == 0 and low == 0:
+        story.append(Paragraph(
+            "All twelve code-level findings (M1–M4, L1–L8) raised during "
+            "the internal audit have been remediated and accompanied by "
+            "Jest regression tests.  No code-level remediation work is "
+            "outstanding.  The remaining items are organisational and "
+            "are listed under <b>What's left to pass the Independent "
+            "Pre-ICO audit</b> below.",
+            styles["Body"],
+        ))
+        story.append(Paragraph(
+            "Historical remediation log (for traceability):",
+            styles["Body"],
+        ))
+        plan = [
+            ("M1", "Extended eraseUserData to delete user-owned "
+                   "influencers and outreach rows; regression test "
+                   "added in tests/integration/privacy.test.ts."),
+            ("M2", "errorHandler now short-circuits with next(err) when "
+                   "res.headersSent is true; double-send unit test "
+                   "added."),
+            ("M3", "auditLog middleware applies a non-PII allow-list to "
+                   "after_state and eraseUserData clears before_state / "
+                   "after_state on the erased user's rows."),
+            ("M4", "PATCH /api/privacy/requests/:id reordered to run "
+                   "authorize('admin') before validateDsarUpdate."),
+            ("L1", "/health/ready wrapped in a 30 req/min per-IP "
+                   "limiter."),
+            ("L2", "PORT env parsed via resolvePort() helper with "
+                   "1–65535 validation."),
+            ("L3", "/api/auth/logout now has a per-user (sub) rate "
+                   "limiter on top of the global IP limiter."),
+            ("L4", "requireConsent emits CONSENT_MISSING vs "
+                   "CONSENT_REVOKED machine-readable error_code."),
+            ("L5", ".env.example documents the BULK_SEARCH_CONCURRENCY "
+                   "runtime cap of 10."),
+            ("L6", "extractProfileData no longer falls back to handle "
+                   "for full_name; leaves it null."),
+            ("L7", "500 responses echo requestId from the requestId "
+                   "middleware."),
+            ("L8", "updateDsarStatus emits a dedicated "
+                   "admin_action:dsar.update_status audit entry."),
+        ]
+    else:
+        plan = [
+            ("M1", "Extend eraseUserData to cover influencers / outreach. "
+                   "Add a regression test in tests/integration/privacy.test.ts."),
+            ("M3", "Stop persisting raw req.body as after_state; use a "
+                   "column allow-list or a redacted JSONB diff. Backfill "
+                   "during the next maintenance window."),
+            ("M2", "Guard errorHandler with res.headersSent. Add a unit "
+                   "test for the double-send path."),
+            ("M4", "Reorder middleware on PATCH /api/privacy/requests/:id "
+                   "so authorize('admin') runs before validators."),
+            ("L1, L3", "Add per-route rate limiters for /health/ready and "
+                       "/api/auth/logout."),
+            ("L7", "Include requestId in 500 responses."),
+            ("L2, L4, L5, L6, L8", "Documentation, validation, and "
+                                    "admin-audit polish."),
+        ]
     for tag, desc in plan:
         story.append(Paragraph(
             f"<b>{tag}.</b> {_esc(desc)}", styles["Body"],
         ))
 
-    story.append(Paragraph(
-        "After these changes the readiness score becomes 100 and the "
-        "verdict moves to <b>Ready</b> for the independent Pre-ICO audit.",
-        styles["Body"],
-    ))
+    if not (high == 0 and medium == 0 and low == 0):
+        story.append(Paragraph(
+            "After these changes the readiness score becomes 100 and the "
+            "verdict moves to <b>Ready</b> for the independent Pre-ICO audit.",
+            styles["Body"],
+        ))
 
     # ---- Pre-ICO checklist (what's left to be done) ------------------------
     story.append(Paragraph(
@@ -599,8 +674,6 @@ def build_audit_report() -> None:
         styles["H2"],
     ))
     todos = [
-        "Close M1–M4 and at least L1, L3, L7 to reach the 90/100 "
-        "investor-facing target.",
         "Engage an independent third-party auditor (e.g. Trail of Bits, "
         "Halborn, Kudelski Security) for a formal letter — this report "
         "is an internal pre-flight check, not a substitute.",
@@ -619,6 +692,12 @@ def build_audit_report() -> None:
         "are current (Supabase, ScrapeCreators, AWS KMS) and add a DPIA "
         "summary for the ICO marketing flow.",
     ]
+    if not (high == 0 and medium == 0 and low == 0):
+        todos.insert(
+            0,
+            "Close M1–M4 and at least L1, L3, L7 to reach the 90/100 "
+            "investor-facing target.",
+        )
     for t in todos:
         story.append(Paragraph("• " + _esc(t), styles["Body"]))
 
@@ -839,16 +918,17 @@ def build_white_paper() -> None:
 
     story.append(Paragraph("Roadmap to Pre-ICO release", styles["H2"]))
     for bullet in [
-        "Close all four Medium findings (M1 erasure scope, M2 "
-        "headersSent guard, M3 audit-log PII, M4 middleware order).",
-        "Close at least three Low findings — L1, L3, L7 are the "
-        "highest leverage.",
         "Engage an independent third-party security firm for a formal "
         "letter and CVE coordination.",
         "Operationalise the retention-purge cron and document the "
         "incident-response playbook.",
         "Launch the public bug-bounty programme at least two weeks "
         "before TGE, as committed by SECURITY.md.",
+        "Publish the runtime KMS key-rotation runbook end-to-end (the "
+        "rotation primitives already exist in services/keyProvider.ts; "
+        "the gap is operational documentation).",
+        "Add a top-level THREAT_MODEL.md and refresh sub-processor "
+        "disclosures in docs/PRIVACY_POLICY.md.",
     ]:
         story.append(Paragraph("• " + _esc(bullet), styles["Body"]))
 
