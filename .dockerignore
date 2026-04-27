@@ -6,6 +6,9 @@ coverage
 .env
 *.md
 AUDIT_REPORT.pdf
+*_AUDIT_REPORT.pdf
+*_WHITE_PAPER.pdf
+WHITE_PAPER.pdf
 tests
 jest.config.js
 tsconfig.test.json
