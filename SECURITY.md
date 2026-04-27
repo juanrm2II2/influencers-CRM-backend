@@ -41,7 +41,8 @@ We aim to:
 
 We follow the [CVSS v3.1](https://www.first.org/cvss/v3.1/specification-document)
 specification.  Issues are also tagged High / Medium / Low using the
-internal Pre-ICO audit nomenclature (see `AUDIT_REPORT.pdf`).
+internal Pre-ICO audit nomenclature (see
+`influencers-CRM-backend_AUDIT_REPORT.pdf`).
 
 ## In Scope
 

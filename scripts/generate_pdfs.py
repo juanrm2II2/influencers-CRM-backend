@@ -1,5 +1,6 @@
 """
-Generate the Pre-ICO `AUDIT_REPORT.pdf` and an updated `WHITE_PAPER.pdf`.
+Generate the Pre-ICO `influencers-CRM-backend_AUDIT_REPORT.pdf` and
+`influencers-CRM-backend_WHITE_PAPER.pdf` deliverables.
 
 Run from the repo root:
 
@@ -13,6 +14,15 @@ checklist.
 The script is deterministic: re-running it with the same checklist
 contents produces functionally equivalent PDFs (page contents are
 identical; only the embedded creation timestamp differs).
+
+The output filenames follow the Pre-ICO audit convention
+``{repo name}_AUDIT_REPORT.pdf`` / ``{repo name}_WHITE_PAPER.pdf``.
+The repository name is the basename of the repo root, so a future
+fork that renames the repo automatically gets correctly named
+deliverables.  At the end of the run the script also performs a
+small housekeeping pass that deletes any legacy unprefixed
+``AUDIT_REPORT.pdf`` / ``WHITE_PAPER.pdf`` files left over from
+before the renaming convention was introduced.
 """
 
 from __future__ import annotations
@@ -38,9 +48,19 @@ from reportlab.platypus import (
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+REPO_NAME = os.path.basename(REPO_ROOT)
 CHECKLIST = os.path.join(REPO_ROOT, "SECURITY_AUDIT_CHECKLIST.md")
-AUDIT_PDF = os.path.join(REPO_ROOT, "AUDIT_REPORT.pdf")
-WHITEPAPER_PDF = os.path.join(REPO_ROOT, "WHITE_PAPER.pdf")
+AUDIT_PDF = os.path.join(REPO_ROOT, f"{REPO_NAME}_AUDIT_REPORT.pdf")
+WHITEPAPER_PDF = os.path.join(REPO_ROOT, f"{REPO_NAME}_WHITE_PAPER.pdf")
+
+# Legacy filenames produced before the {repo}_AUDIT_REPORT.pdf naming
+# convention was adopted.  They are deleted as a housekeeping step at
+# the end of `main()` so the repo never carries two copies of the same
+# report.
+LEGACY_PDFS = (
+    os.path.join(REPO_ROOT, "AUDIT_REPORT.pdf"),
+    os.path.join(REPO_ROOT, "WHITE_PAPER.pdf"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -887,8 +907,9 @@ def build_white_paper() -> None:
         ["Dockerfile",
          "Multi-stage build, non-root user, base image pinned by "
          "SHA-256."],
-        ["AUDIT_REPORT.pdf, SECURITY_AUDIT_CHECKLIST.md, "
-         "WHITE_PAPER.pdf, SECURITY.md",
+        ["AUDIT_REPORT / WHITE_PAPER PDFs (named "
+         "{repo}_AUDIT_REPORT.pdf, {repo}_WHITE_PAPER.pdf), "
+         "SECURITY_AUDIT_CHECKLIST.md, SECURITY.md",
          "Investor-facing security and architecture documentation."],
     ]
     layout_tbl = Table(layout, colWidths=[55 * mm, 110 * mm])
@@ -945,6 +966,22 @@ def main() -> int:
     build_white_paper()
     print(f"Wrote {AUDIT_PDF}")
     print(f"Wrote {WHITEPAPER_PDF}")
+
+    # Housekeeping: remove legacy unprefixed PDFs left over from
+    # before the {repo}_AUDIT_REPORT.pdf / {repo}_WHITE_PAPER.pdf
+    # convention was adopted.  Guard against accidentally deleting a
+    # file that happens to share the legacy name with the new one
+    # (e.g. if the repo is ever renamed to `AUDIT_REPORT` or
+    # `WHITE_PAPER`).
+    new_paths = {AUDIT_PDF, WHITEPAPER_PDF}
+    for legacy in LEGACY_PDFS:
+        if legacy in new_paths:
+            continue
+        try:
+            os.remove(legacy)
+            print(f"Removed legacy {legacy}")
+        except FileNotFoundError:
+            pass
     return 0
 
 
